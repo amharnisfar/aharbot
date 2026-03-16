@@ -152,7 +152,10 @@ The bot supports downloading and streaming from **1000+ websites**. Here are the
 ---
 
 ## ✍️ Created By
-- **[Amhar Nisfer](https://github.com/izzathnisfer)** - Lead Developer & Architect
+- **[Amhar Nisfer](https://github.com/amharnisfar)** - Lead Developer & Architect
+
+## 🤝 Partnership Developer
+- **[Izzath Nisfer](https://github.com/izzathnisfer)** - Core Collaborator & Partner
 
 ---
 
