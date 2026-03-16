@@ -264,7 +264,7 @@ SEARCH_SESSIONS = {}  # user_id -> { results: list, page: int }
 AI_CONVERSATIONS = {}  # user_id -> list of message dicts
 
 # --- Ollama AI Client ---
-OLLAMA_API_KEY = "27a07b6af3fc40a4829f47069a320afb.qJNPkpw7axBfj8kPHvfmnsZ5"
+OLLAMA_API_KEY = "yourtokenstringhere*************"
 ollama_client = OllamaClient(
     host="https://ollama.com",
     headers={'Authorization': 'Bearer ' + OLLAMA_API_KEY}
