@@ -1,0 +1,26 @@
+# Sensitive data
+cookies.txt
+instagram_cookies.txt
+youtube_cookies.txt
+users.txt
+whatsapp_session/
+.wwebjs_cache/
+
+# Logs and temp files
+*.log
+nohup.out
+qr.png
+__pycache__/
+downloads/
+/datadrive/
+
+# OS/IDEs
+.DS_Store
+.vscode/
+
+# Build/Packages
+node_modules/
+*.deb
+dist/
+build/
+*.egg-info/
