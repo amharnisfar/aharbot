@@ -88,6 +88,34 @@ Follow this guide to get a professional free domain and expose your bot to the g
 
 ---
 
+## 📱 Supported Platforms
+
+The bot supports downloading and streaming from **1000+ websites**. Here are the most popular ones:
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/youtube.svg" width="30" height="30" alt="YouTube" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/instagram.svg" width="30" height="30" alt="Instagram" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/facebook.svg" width="30" height="30" alt="Facebook" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/tiktok.svg" width="30" height="30" alt="TikTok" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/x.svg" width="30" height="30" alt="X" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/soundcloud.svg" width="30" height="30" alt="SoundCloud" />
+  <br>
+  <b>YouTube • Instagram • Facebook • TikTok • X • SoundCloud</b>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/pinterest.svg" width="30" height="30" alt="Pinterest" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/reddit.svg" width="30" height="30" alt="Reddit" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/linkedin.svg" width="30" height="30" alt="LinkedIn" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/twitch.svg" width="30" height="30" alt="Twitch" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/vimeo.svg" width="30" height="30" alt="Vimeo" />
+  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/snapchat.svg" width="30" height="30" alt="Snapchat" />
+  <br>
+  <b>Pinterest • Reddit • LinkedIn • Twitch • Vimeo • Snapchat</b>
+</p>
+
+---
+
 ## 🏗️ Technical Component Map
 
 | Component | Technology | Purpose |
