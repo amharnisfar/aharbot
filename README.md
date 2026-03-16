@@ -8,8 +8,8 @@ A premium, state-of-the-art universal social media downloader. This bot provides
 
 - **Universal Support:** Powered by `yt-dlp` to handle YouTube, Instagram, Facebook, TikTok, Twitter, and 1000+ other sites.
 - **Multi-Platform Access:**
-  - **Telegram:** Use commands or just paste a link.
-  - **WhatsApp:** Intelligent link detection and interactive format selection.
+  - **Telegram:** Use commands like `/dl` or just paste a link for auto-detection.
+  - **WhatsApp:** Intelligent link detection and interactive format selection (respond with number to choose quality).
   - **Web UI:** A beautiful, responsive interface for browser-based downloads.
 - **Large File Handling:** 
   - Automatically bypasses platform limits (Telegram 2GB / WhatsApp 16MB).
@@ -19,36 +19,49 @@ A premium, state-of-the-art universal social media downloader. This bot provides
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ System Architecture & Components
 
 The project is split into three main components working in harmony:
 
 1.  **Core Bot (`bot/bot.py`):**
-    - The "Brain" of the operation.
-    - Handles the Telegram API (Pyrogram).
-    - Runs an asynchronous Web Server (Aiohttp) to host downloaded files.
-    - Manages the `yt-dlp` engine for extraction and downloading.
+    - **Telegram Handler:** Uses Pyrogram to manage chat interactions.
+    - **Web Server:** Runs an Aiohttp server on port 8080 to serve direct download links.
+    - **Download Engine:** Orchestrates `yt-dlp` to extract metadata and download media.
+    - **Deno Integration:** Uses Deno as a JS runtime to solve complex YouTube/Instagram challenges.
 2.  **WhatsApp Bridge (`bot/whatsapp_bridge.js`):**
-    - A Node.js service using `whatsapp-web.js` and Puppeteer (Chrome).
-    - Intercepts WhatsApp messages and communicates with the Core Bot via a local API.
-    - Handles the QR code login process and automated replies.
+    - A Node.js service using `whatsapp-web.js`.
+    - **Puppeteer Integration:** Uses a real Chrome instance to handle WhatsApp Web's encryption and media protocols.
+    - **API Communication:** Forwards messages to the Core Bot and receives reply instructions.
 3.  **Web Frontend (`web/index.html`):**
-    - A modern, "Glassmorphism" styled interface.
-    - Allows users to fetch info and download directly via the browser.
+    - A modern, "Glassmorphism" styled interface for direct browser downloads.
+
+---
+
+## 📂 File Explanations
+
+- **`bot/bot.py`**: The main entry point for the Python backend. Contains configuration for tokens and hardware paths.
+- **`bot/whatsapp_bridge.js`**: The Node.js application that powers the WhatsApp connectivity.
+- **`bot/run_bridge.sh`**: A simple shell script that ensures the WhatsApp bridge stays running even after a crash.
+- **`web/index.html`**: The single-page application for the web interface.
+- **`requirements.txt`**: List of all Python libraries needed.
+- **`package.json`**: List of all Node.js libraries needed for the WhatsApp bridge.
 
 ---
 
 ## 📋 Installation Guide
 
 ### 1. System Requirements
-- **OS:** Ubuntu 20.04+ / Debian 11+
-- **Resources:** At least 2GB RAM (Chrome/Puppeteer requires memory).
-- **Disk:** Recommend a dedicated partition for downloads (configured at `/datadrive` by default).
+- **OS:** Ubuntu 20.04+ (Recommended).
+- **Hard Drive:** Requires a mount point at `/datadrive` for large downloads (this can be changed in `bot.py`).
+- **Dependencies:** Python 3.10+, Node.js 18+, FFmpeg, Deno, and Google Chrome Stable.
 
-### 2. Install Dependencies
+### 2. Install Tools & Dependencies
 ```bash
 # Update and install system tools
 sudo apt update && sudo apt install -y python3-pip nodejs npm ffmpeg google-chrome-stable
+
+# Install Deno (Required for YouTube JS challenges)
+curl -fsSL https://deno.land/install.sh | sh
 
 # Install Python libraries
 pip install -r requirements.txt
@@ -60,41 +73,36 @@ cd ..
 ```
 
 ### 3. Configuration
-- **API Credentials:** Open `bot/bot.py` and fill in:
-  - `API_ID` & `API_HASH` (from my.telegram.org)
-  - `BOT_TOKEN` (from @BotFather)
-- **Cookies:** To prevent bot detection on YouTube/Instagram:
-  - Export cookies from your browser (Netscape format).
-  - Save as `bot/cookies.txt`.
+- **Bot Tokens:** Edit `bot/bot.py` (Lines 43-45) to add your `API_ID`, `API_HASH`, and `BOT_TOKEN`.
+- **Cookies:** To avoid getting blocked by YouTube or Instagram:
+  - Export your browser cookies in Netscape format.
+  - Save as `bot/cookies.txt` or `bot/instagram_cookies.txt`.
+- **Deno Path:** If Deno is installed in a non-standard location, update `DENO_BIN_DIR` in `bot.py`.
 
-### 4. Running the Services
-We recommend using `pm2` or `systemd` to keep these running 24/7.
+### 4. Starting the Bot
+For production, we recommend using a systemd service. For manual start:
 
-**Manual start:**
-```bash
-# Start the Bot & Web Server
-python3 bot/bot.py
-
-# Start the WhatsApp Bridge (with auto-restart support)
-cd bot
-./run_bridge.sh
-```
-
----
-
-## 🔐 Security & Privacy
-- **.gitignore:** Configured to never upload your `cookies.txt`, `whatsapp_session`, or downloaded user data to GitHub.
-- **Auto-Cleanup:** The system automatically wipes downloaded files every 3 hours to protect user privacy and disk space.
+1. **Start the Core Engine:**
+   ```bash
+   python3 bot/bot.py
+   ```
+2. **Start the WhatsApp Bridge:**
+   ```bash
+   cd bot
+   chmod +x run_bridge.sh
+   ./run_bridge.sh
+   ```
 
 ---
 
-## 🛠️ Commands
-- `/dl [URL]` - Universal download command.
-- `/start` - Get started and see supported sites.
-- Just paste any link in WhatsApp or Telegram to trigger the auto-downloader!
+## 🧹 Automatic Maintenance
+The bot includes a background loop that:
+- Runs every **5 minutes**.
+- Deletes expired web download files (Links are valid for **3 hours**).
+- Cleans up memory and temporary download fragments.
 
 ---
 
-## 🤝 Support
-Created by [Amharnisfar](https://github.com/amharnisfar).
-Project Link: [https://github.com/amharnisfar/aharbot](https://github.com/amharnisfar/aharbot)
+## 🔗 Project Links
+- **Lead Developer:** [Amharnisfar](https://github.com/amharnisfar)
+- **GitHub:** [https://github.com/amharnisfar/aharbot](https://github.com/amharnisfar/aharbot)
