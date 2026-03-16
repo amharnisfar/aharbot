@@ -110,6 +110,33 @@ The bot supports downloading and streaming from **1000+ websites**. Here are the
   <img src="https://img.shields.io/badge/Snapchat-FFFC00?style=for-the-badge&logo=snapchat&logoColor=black" />
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
+  <img src="https://img.shields.io/badge/DailyMotion-0066DC?style=for-the-badge&logo=dailymotion&logoColor=white" />
+  <img src="https://img.shields.io/badge/Bilibili-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" />
+  <img src="https://img.shields.io/badge/Telegram-26A6E1?style=for-the-badge&logo=telegram&logoColor=white" />
+  <img src="https://img.shields.io/badge/VK-4C75A3?style=for-the-badge&logo=vk&logoColor=white" />
+  <img src="https://img.shields.io/badge/Rumble-85B742?style=for-the-badge&logo=rumble&logoColor=white" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Odysee-EF1970?style=for-the-badge&logo=odysee&logoColor=white" />
+  <img src="https://img.shields.io/badge/Mixcloud-52AAD8?style=for-the-badge&logo=mixcloud&logoColor=white" />
+  <img src="https://img.shields.io/badge/Bandcamp-1EA1F3?style=for-the-badge&logo=bandcamp&logoColor=white" />
+  <img src="https://img.shields.io/badge/TED-E62B1E?style=for-the-badge&logo=ted&logoColor=white" />
+  <img src="https://img.shields.io/badge/Coursera-0056D2?style=for-the-badge&logo=coursera&logoColor=white" />
+  <img src="https://img.shields.io/badge/Udemy-A435F0?style=for-the-badge&logo=udemy&logoColor=white" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Spotify-1DB954?style=for-the-badge&logo=spotify&logoColor=white" />
+  <img src="https://img.shields.io/badge/Apple_Music-FA243C?style=for-the-badge&logo=apple-music&logoColor=white" />
+  <img src="https://img.shields.io/badge/Deezer-FEAA2D?style=for-the-badge&logo=deezer&logoColor=white" />
+  <img src="https://img.shields.io/badge/Tidal-000000?style=for-the-badge&logo=tidal&logoColor=white" />
+  <img src="https://img.shields.io/badge/Crunchyroll-F47521?style=for-the-badge&logo=crunchyroll&logoColor=white" />
+  <img src="https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white" />
+</p>
+
 ---
 
 ## 🏗️ Technical Component Map
