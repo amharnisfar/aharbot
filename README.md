@@ -93,25 +93,21 @@ Follow this guide to get a professional free domain and expose your bot to the g
 The bot supports downloading and streaming from **1000+ websites**. Here are the most popular ones:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/youtube.svg" width="30" height="30" alt="YouTube" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/instagram.svg" width="30" height="30" alt="Instagram" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/facebook.svg" width="30" height="30" alt="Facebook" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/tiktok.svg" width="30" height="30" alt="TikTok" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/x.svg" width="30" height="30" alt="X" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/soundcloud.svg" width="30" height="30" alt="SoundCloud" />
-  <br>
-  <b>YouTube • Instagram • Facebook • TikTok • X • SoundCloud</b>
+  <img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" />
+  <img src="https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white" />
+  <img src="https://img.shields.io/badge/Facebook-1877F2?style=for-the-badge&logo=facebook&logoColor=white" />
+  <img src="https://img.shields.io/badge/TikTok-000000?style=for-the-badge&logo=tiktok&logoColor=white" />
+  <img src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" />
+  <img src="https://img.shields.io/badge/SoundCloud-FF3300?style=for-the-badge&logo=soundcloud&logoColor=white" />
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/pinterest.svg" width="30" height="30" alt="Pinterest" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/reddit.svg" width="30" height="30" alt="Reddit" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/linkedin.svg" width="30" height="30" alt="LinkedIn" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/twitch.svg" width="30" height="30" alt="Twitch" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/vimeo.svg" width="30" height="30" alt="Vimeo" />
-  <img src="https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/snapchat.svg" width="30" height="30" alt="Snapchat" />
-  <br>
-  <b>Pinterest • Reddit • LinkedIn • Twitch • Vimeo • Snapchat</b>
+  <img src="https://img.shields.io/badge/Pinterest-BD081C?style=for-the-badge&logo=pinterest&logoColor=white" />
+  <img src="https://img.shields.io/badge/Reddit-FF4500?style=for-the-badge&logo=reddit&logoColor=white" />
+  <img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" />
+  <img src="https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white" />
+  <img src="https://img.shields.io/badge/Vimeo-1AB7EA?style=for-the-badge&logo=vimeo&logoColor=white" />
+  <img src="https://img.shields.io/badge/Snapchat-FFFC00?style=for-the-badge&logo=snapchat&logoColor=black" />
 </p>
 
 ---
