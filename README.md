@@ -8,7 +8,7 @@ A premium, high-performance universal media downloader and streamer. This bot in
 - **Telegram Bot:** [@aharallinonebot](https://t.me/aharallinonebot)
 - **Telegram Channel:** [@aharbots](https://t.me/aharbots)
 - **Website:** [https://aharbot.qzz.io](https://aharbot.qzz.io)
-- **WhatsApp Automation:** [+94777616398](https://wa.me/94777616398)
+- **WhatsApp Automation:**
 
 ---
 
