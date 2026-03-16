@@ -1,83 +1,100 @@
-# Ahar File Streamer Bot (aharbot)
+# 🚀 Ahar File Streamer Bot (aharbot)
 
-A powerful, universal social media downloader bot supporting Telegram, WhatsApp, and a Web interface. Built with Python (Pyrogram) and Node.js (whatsapp-web.js).
+A premium, state-of-the-art universal social media downloader. This bot provides a seamless experience for downloading media from across the web via **Telegram**, **WhatsApp**, and a dedicated **Web Interface**.
 
-## 🚀 Features
+---
 
-- **Universal Downloading:** Supports YouTube, Instagram, Facebook, TikTok, Twitter, and more (via `yt-dlp`).
-- **Multi-Platform:** Interacts through Telegram bot commands, WhatsApp messages, and a clean Web UI.
-- **Large File Support:** Automatically generates 3-hour direct web links for files that exceed WhatsApp/Telegram upload limits.
-- **Interactive UI:** Dynamic format selection for YouTube videos on all platforms.
-- **High Performance:** Multi-threaded downloading and efficient cleanup.
+## 🌟 Key Features
 
-## 🛠️ Tech Stack
+- **Universal Support:** Powered by `yt-dlp` to handle YouTube, Instagram, Facebook, TikTok, Twitter, and 1000+ other sites.
+- **Multi-Platform Access:**
+  - **Telegram:** Use commands or just paste a link.
+  - **WhatsApp:** Intelligent link detection and interactive format selection.
+  - **Web UI:** A beautiful, responsive interface for browser-based downloads.
+- **Large File Handling:** 
+  - Automatically bypasses platform limits (Telegram 2GB / WhatsApp 16MB).
+  - Generates high-speed **3-hour direct web links** for large files.
+- **Smart Quality Selection:** Pick exactly what you want—from 144p to 4K video, or high-quality audio only.
+- **Automated Stability:** Built-in supervisor for the WhatsApp bridge and auto-cleanup tasks to keep the server healthy.
 
-- **Backend:** Python 3.10+
-- **Telegram:** Pyrogram
-- **WhatsApp:** [whatsapp-web.js](https://github.com/pedroslopez/whatsapp-web.js) + Node.js
-- **Web Server:** Aiohttp
-- **Engine:** [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-- **Browser Automation:** Puppeteer (wrapped by whatsapp-web.js)
+---
 
-## 📋 Prerequisites
+## 🏗️ System Architecture
 
-- **Linux OS** (Ubuntu/Debian recommended)
-- **Python 3.10+**
-- **Node.js 18+**
-- **Google Chrome Stable** (for WhatsApp bridge codecs)
-- **ffmpeg** (for media processing)
+The project is split into three main components working in harmony:
 
-## ⚙️ Installation
+1.  **Core Bot (`bot/bot.py`):**
+    - The "Brain" of the operation.
+    - Handles the Telegram API (Pyrogram).
+    - Runs an asynchronous Web Server (Aiohttp) to host downloaded files.
+    - Manages the `yt-dlp` engine for extraction and downloading.
+2.  **WhatsApp Bridge (`bot/whatsapp_bridge.js`):**
+    - A Node.js service using `whatsapp-web.js` and Puppeteer (Chrome).
+    - Intercepts WhatsApp messages and communicates with the Core Bot via a local API.
+    - Handles the QR code login process and automated replies.
+3.  **Web Frontend (`web/index.html`):**
+    - A modern, "Glassmorphism" styled interface.
+    - Allows users to fetch info and download directly via the browser.
 
-### 1. Clone the Repository
+---
+
+## 📋 Installation Guide
+
+### 1. System Requirements
+- **OS:** Ubuntu 20.04+ / Debian 11+
+- **Resources:** At least 2GB RAM (Chrome/Puppeteer requires memory).
+- **Disk:** Recommend a dedicated partition for downloads (configured at `/datadrive` by default).
+
+### 2. Install Dependencies
 ```bash
-git clone https://github.com/amharnisfar/aharbot.git
-cd aharbot
-```
+# Update and install system tools
+sudo apt update && sudo apt install -y python3-pip nodejs npm ffmpeg google-chrome-stable
 
-### 2. Install System Dependencies
-```bash
-sudo apt update
-sudo apt install -y python3-pip nodejs npm ffmpeg google-chrome-stable
-```
-
-### 3. Install Python Dependencies
-```bash
+# Install Python libraries
 pip install -r requirements.txt
-```
 
-### 4. Install Node.js Dependencies
-```bash
+# Install WhatsApp Bridge dependencies
 cd bot
 npm install
 cd ..
 ```
 
-### 5. Configuration
-- Place your `cookies.txt` in the root or `bot/` directory for YouTube/Instagram bypass.
-- Edit `bot/bot.py` to set your `API_ID`, `API_HASH`, and `BOT_TOKEN`.
-- (Optional) Configure the `whatsapp_bridge.js` if you need custom Puppeteer settings.
+### 3. Configuration
+- **API Credentials:** Open `bot/bot.py` and fill in:
+  - `API_ID` & `API_HASH` (from my.telegram.org)
+  - `BOT_TOKEN` (from @BotFather)
+- **Cookies:** To prevent bot detection on YouTube/Instagram:
+  - Export cookies from your browser (Netscape format).
+  - Save as `bot/cookies.txt`.
 
-## 🏃 Running the Bot
+### 4. Running the Services
+We recommend using `pm2` or `systemd` to keep these running 24/7.
 
-The bot uses a systemd service for maximum uptime.
-
+**Manual start:**
 ```bash
-# Start the Telegram bot and Web server
+# Start the Bot & Web Server
 python3 bot/bot.py
 
-# (In a separate terminal) Start the WhatsApp bridge
+# Start the WhatsApp Bridge (with auto-restart support)
 cd bot
 ./run_bridge.sh
 ```
 
-### 🧹 Automatic Cleanup
-The bot includes a background task that wakes up every 5 minutes to delete expired web download files (3-hour expiry).
+---
 
-## 🔗 Project Links
+## 🔐 Security & Privacy
+- **.gitignore:** Configured to never upload your `cookies.txt`, `whatsapp_session`, or downloaded user data to GitHub.
+- **Auto-Cleanup:** The system automatically wipes downloaded files every 3 hours to protect user privacy and disk space.
 
-- **GitHub Repository:** [https://github.com/amharnisfar/aharbot](https://github.com/amharnisfar/aharbot)
-- **Web Interface:** [https://aharbot.qzz.io](https://aharbot.qzz.io)
+---
 
-## ⚖️ License
-MIT License. See [LICENSE](LICENSE) for details.
+## 🛠️ Commands
+- `/dl [URL]` - Universal download command.
+- `/start` - Get started and see supported sites.
+- Just paste any link in WhatsApp or Telegram to trigger the auto-downloader!
+
+---
+
+## 🤝 Support
+Created by [Amharnisfar](https://github.com/amharnisfar).
+Project Link: [https://github.com/amharnisfar/aharbot](https://github.com/amharnisfar/aharbot)
