@@ -40,9 +40,9 @@ import nest_asyncio
 nest_asyncio.apply()
 
 # --- BOT CONFIG ---
-API_ID = REDACTED_API_ID
-API_HASH = "REDACTED_API_HASH"
-BOT_TOKEN = "REDACTED_BOT_TOKEN"
+API_ID = *****
+API_HASH = "***********************"
+BOT_TOKEN = "*********:***************************"
 
 # --- CHANNELS ---
 # Bot must be an admin in this channel for force-sub to work.
