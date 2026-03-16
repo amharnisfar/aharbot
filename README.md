@@ -1,4 +1,4 @@
-# 🚀 Ahar File Streamer Bot (aharbot)
+# 🚀 Ahar All in One downloader (aharbot)
 
 A premium, high-performance universal media downloader and streamer. This bot integrates **Telegram**, **WhatsApp**, and a **Web GUI** into a single powerful ecosystem.
 
@@ -100,8 +100,8 @@ Follow this guide to get a professional free domain and expose your bot to the g
 
 ---
 
-## ✍️ Contributors
-- **[izzathnisfer](https://github.com/izzathnisfer)** - Lead Developer & Architect
+## ✍️ Created By
+- **[Amhar Nisfer](https://github.com/izzathnisfer)** - Lead Developer & Architect
 
 ---
 
