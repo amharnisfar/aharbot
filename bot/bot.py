@@ -257,7 +257,6 @@ import uuid
 
 # --- GLOBALS ---
 ACTIVE_DOWNLOADS = {}
-yt_dl_lock = asyncio.Lock() # Central lock for yt-dlp extraction to avoid race conditions without blocking the event loop
 YT_SESSIONS = {}  # user_id -> { url, info, message }
 SNIFFED_SESSIONS = {}  # short_id -> full_url
 SEARCH_SESSIONS = {}  # user_id -> { results: list, page: int }
@@ -415,19 +414,23 @@ async def upload_file(client: Client, message: Message, chat_id: int, file_path:
 
     # --- Extract video metadata if applicable (only if not provided) ---
     if file_type == "video" and os.path.exists(file_path) and (duration == 0 or width == 0 or height == 0):
-        try:
-            cap = cv2.VideoCapture(file_path)
-            if cap.isOpened():
-                if width == 0: width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                if height == 0: height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-                fps = cap.get(cv2.CAP_PROP_FPS)
-                if duration == 0 and fps and fps > 0 and frame_count and frame_count > 0:
-                    duration = int(frame_count / fps)
-            cap.release()
-        except Exception as e:
-            print(f"[upload_file] Video metadata extraction error: {e}")
-            duration = duration or 0
+        def get_video_meta():
+            d, w, h = duration, width, height
+            try:
+                cap = cv2.VideoCapture(file_path)
+                if cap.isOpened():
+                    if w == 0: w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    if h == 0: h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    if d == 0 and fps and fps > 0 and frame_count and frame_count > 0:
+                        d = int(frame_count / fps)
+                cap.release()
+            except Exception as e:
+                print(f"[upload_file] Video metadata extraction error: {e}")
+            return d, w, h
+
+        duration, width, height = await asyncio.to_thread(get_video_meta)
 
     last_update_time = 0
 
@@ -1441,14 +1444,12 @@ async def torrent_handler(client, message):
 # Helper: extract info from any supported URL
 async def _yt_extract_info(url: str, custom_opts: dict = None) -> dict:
     """Extract media info from any yt-dlp supported URL."""
-    loop = asyncio.get_event_loop()
     ydl_opts = get_base_ydl_opts(custom_opts={'noplaylist': True, 'format': 'all'}, url=url)
     if custom_opts:
         ydl_opts.update(custom_opts)
         
-    async with yt_dl_lock: # Ensure thread safety without blocking the event loop
-        # Use standardized retry helper
-        info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=False)
+    # Standardized retry helper (already handles reloads and rotate-clients)
+    info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=False)
     return info
 
 
@@ -2112,7 +2113,9 @@ async def yt_quick_callback(client, callback_query):
 
         if thumb_path_to_clean:
             final_thumb_path = base + "_thumb.jpg"
-            Image.open(thumb_path_to_clean).convert("RGB").save(final_thumb_path, "jpeg")
+            def _proc_thumb():
+                Image.open(thumb_path_to_clean).convert("RGB").save(final_thumb_path, "jpeg")
+            await asyncio.to_thread(_proc_thumb)
 
         title = info.get('title', 'N/A')
         caption = f"{platform_emoji} **{title}**"
@@ -2425,7 +2428,9 @@ async def yt_dl_callback(client, callback_query):
 
         if thumb_path_to_clean:
             final_thumb_path = base + "_thumb.jpg"
-            Image.open(thumb_path_to_clean).convert("RGB").save(final_thumb_path, "jpeg")
+            def _proc_thumb():
+                Image.open(thumb_path_to_clean).convert("RGB").save(final_thumb_path, "jpeg")
+            await asyncio.to_thread(_proc_thumb)
 
         title = info.get('title', 'N/A')
         uploader = info.get('uploader', 'N/A')
