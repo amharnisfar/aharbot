@@ -55,6 +55,18 @@ When you paste a link, the bot doesn't just "download" it. It performs a sophist
 
 ---
 
+## 🛡️ Isolated Session Architecture (Security & Concurrency)
+
+To prevent file name collisions and ensure server stability, the bot utilizes a **Session Isolation Model**:
+
+1.  **Unique Directories:** Every download request (Universal, Direct URL, Playlist) is assigned a unique, user-specific, and timestamped directory:
+    - Path format: `/datadrive/downloads/{user_id}/{YYYY-MM-DD_HH-MM-SS}/`
+2.  **Concurrent Execution:** Multiple users can download files with identical names simultaneously without interference.
+3.  **Automated Cleanup:** The bot implements a strict zero-leak policy. Once a file is uploaded to Telegram or the 3-hour web link is expired, the entire session folder is recursively removed using `shutil.rmtree`.
+4.  **Resource Persistence:** Large files (>2GB) are held in their isolated directories for exactly 3 hours to serve as direct web streams before being purged.
+
+---
+
 ## 🌐 Dynamic DNS (dpdns.org) & Cloudflared Setup
 
 Follow this guide to get a professional free domain and expose your bot to the global web without a static IP.

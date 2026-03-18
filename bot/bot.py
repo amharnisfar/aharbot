@@ -32,6 +32,7 @@ from pyrogram import Client, filters, idle
 # --- Web Server Data ---
 ACTIVE_LINKS = {}  # { 'hash': {'path': '/datadrive/downloads/file.mp4', 'expiry': timestamp, 'name': 'file.mp4'} }
 WA_SESSIONS = {}   # { 'wa_from': { 'url': '...', 'formats': [...], 'timestamp': ... } }
+CANCELLED_USERS = set() # Track users who requested to cancel their active download
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, BotCommand
 from pyrogram.errors import UserNotParticipant, ChatAdminRequired, ChatWriteForbidden
 
@@ -40,13 +41,14 @@ import nest_asyncio
 nest_asyncio.apply()
 
 # --- BOT CONFIG ---
-API_ID = *****
-API_HASH = "***********************"
-BOT_TOKEN = "*********:***************************"
+API_ID = REDACTED_API_ID
+API_HASH = "REDACTED_API_HASH"
+BOT_TOKEN = "REDACTED_BOT_TOKEN"
 
 # --- CHANNELS ---
 # Bot must be an admin in this channel for force-sub to work.
 FORCE_SUB_CHANNEL = "@aharbots"
+MEDIA_BACKUP_CHANNEL = -1003253205053
 
 # --- PATHS & ENVIRONMENT ---
 # Add Deno to PATH and set runtime for yt-dlp JS challenges
@@ -63,9 +65,33 @@ print("Bot configured to use the 500GB partition at /datadrive while downloading
 COOKIES_FILE = "/home/azureuser/aharbot/bot/cookies.txt"
 INSTAGRAM_COOKIES_FILE = "/home/azureuser/aharbot/bot/instagram_cookies.txt"
 USERS_FILE = "./users.txt"
+
+
+def get_total_users():
+    """Returns the total number of unique users tracked in users.txt"""
+    if not os.path.exists(USERS_FILE):
+        return 0
+    try:
+        with open(USERS_FILE, "r") as f:
+            return len(set(line.strip() for line in f if line.strip()))
+    except Exception:
+        return 0
 WHATSAPP_BRIDGE_URL = "http://localhost:3000/send"
 # --- YT-DLP CONFIGURATION & HELPERS ---
-def get_base_ydl_opts(download=False, custom_opts=None, url=None):
+class DownloadCancelled(Exception):
+    """Custom exception raised when a user cancels a download."""
+    pass
+
+
+def get_timestamp_user_dir(user_id: int) -> str:
+    """Create a unique directory for a user's download session."""
+    now = time.strftime("%Y-%m-%d_%H-%M-%S")
+    path = os.path.join(DOWNLOAD_DIRECTORY, str(user_id), now)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def get_base_ydl_opts(download=False, custom_opts=None, url=None, user_id=None, outtmpl_dir=None):
     """
     Centralized function to get the base yt-dlp options that are verified to bypass blocks.
     Matches the successful CLI configuration.
@@ -80,8 +106,7 @@ def get_base_ydl_opts(download=False, custom_opts=None, url=None):
         'js_runtimes': {'deno': {}},
         'extractor_args': {
             'youtube': {
-                'player_client': ['web_safari', 'tv', 'ios', 'mweb'],
-                'skip': ['web', 'web_creator'] # These cause blocks
+                # Letting yt-dlp handle player clients automatically as manual overrides are currently being blocked
             }
         },
         'hls_prefer_native': True,
@@ -119,8 +144,9 @@ def get_base_ydl_opts(download=False, custom_opts=None, url=None):
         print(f"[DEBUG] Cookie file not found: {selected_cookies}")
         
     if download:
+        target_dir = outtmpl_dir or DOWNLOAD_DIRECTORY
         opts.update({
-            'outtmpl': f'{DOWNLOAD_DIRECTORY}/%(title).100s_%(id)s.%(ext)s',
+            'outtmpl': f'{target_dir}/%(title).100s_%(id)s.%(ext)s',
             'restrictfilenames': True,
             'merge_output_format': 'mp4',
         })
@@ -131,9 +157,10 @@ def get_base_ydl_opts(download=False, custom_opts=None, url=None):
     return opts
 
 # --- YT-DLP HELPER WITH RETRY ---
-def yt_dlp_call_with_retry(url, ydl_opts, download=False):
+def yt_dlp_call_with_retry(url, ydl_opts, download=False, user_id=None):
     """
     Standardized synchronous wrapper for yt-dlp calls to handle 'The page needs to be reloaded' error.
+    Now supports Cancellation via the CANCELLED_USERS set.
     """
     attempts = 0
     max_attempts = 5
@@ -147,7 +174,15 @@ def yt_dlp_call_with_retry(url, ydl_opts, download=False):
         ['tvhtml5', 'android']
     ]
 
+    def stop_hook(d):
+        if user_id and user_id in CANCELLED_USERS:
+            raise DownloadCancelled("User clicked cancel.")
+
     while attempts < max_attempts:
+        # Check cancellation before starting a new attempt
+        if user_id and user_id in CANCELLED_USERS:
+            raise DownloadCancelled("User clicked cancel.")
+
         current_opts = ydl_opts.copy()
         
         # Inject rotation only after the first failure
@@ -160,10 +195,18 @@ def yt_dlp_call_with_retry(url, ydl_opts, download=False):
         # Force Deno for n-challenge solving (master branch requirement)
         current_opts['js_runtimes'] = {'deno': {}}
         current_opts['remote_components'] = ['ejs:github']
+        
+        # Add cancellation hook
+        if 'progress_hooks' not in current_opts:
+            current_opts['progress_hooks'] = []
+        current_opts['progress_hooks'].append(stop_hook)
 
         try:
             with yt_dlp.YoutubeDL(current_opts) as ydl:
                 return ydl.extract_info(url, download=download)
+        except DownloadCancelled as e:
+            # Re-raise cancellation immediately to stop the retry loop
+            raise e
         except Exception as e:
             attempts += 1
             err_str = str(e)
@@ -180,9 +223,9 @@ def yt_dlp_call_with_retry(url, ydl_opts, download=False):
                 continue
             raise e
 
-def _download_with_ytdlp(url, opts):
+def _download_with_ytdlp(url, opts, user_id=None):
     """Synchronous helper for downloading via yt-dlp with aggressive retry logic."""
-    return yt_dlp_call_with_retry(url, opts, download=True)
+    return yt_dlp_call_with_retry(url, opts, download=True, user_id=user_id)
 
 # --- SUPPORTED PLATFORM DETECTION ---
 PLATFORM_MAP = {
@@ -398,7 +441,7 @@ def _detect_file_type(file_path: str) -> str:
     return "document"
 
 
-async def upload_file(client: Client, message: Message, chat_id: int, file_path: str, caption: str = "", thumb_path: str = None, duration: int = 0, width: int = 0, height: int = 0):
+async def upload_file(client: Client, message: Message, chat_id: int, file_path: str, caption: str = "", thumb_path: str = None, duration: int = 0, width: int = 0, height: int = 0, url: str = ""):
     """Upload any file type (video, audio, photo, or document) with progress."""
     file_type = _detect_file_type(file_path)
     # If the user passed a message but wants it to be the status message
@@ -410,7 +453,9 @@ async def upload_file(client: Client, message: Message, chat_id: int, file_path:
         user_info = f"\n\n👤 Requested by: {user.first_name or 'Unknown'} (ID: `{user.id}`)"
     else:
         user_info = ""
-    final_caption = (caption or "") + user_info
+    
+    source_info = f"\n\n🔗 [Source Link]({url})" if url else ""
+    final_caption = (caption or "") + source_info + user_info
 
     # --- Extract video metadata if applicable (only if not provided) ---
     if file_type == "video" and os.path.exists(file_path) and (duration == 0 or width == 0 or height == 0):
@@ -494,9 +539,10 @@ async def upload_file(client: Client, message: Message, chat_id: int, file_path:
             )
 
         try:
-            if sent_msg:
-                await sent_msg.copy(chat_id=-1003253205053, caption=final_caption)
-        except: pass
+            if sent_msg and MEDIA_BACKUP_CHANNEL:
+                await sent_msg.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=final_caption)
+        except Exception as e:
+            print(f"[upload_file] Forwarding error: {e}")
  
         try:
             file_hash = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
@@ -930,6 +976,12 @@ async def stats_command(_, message):
     if days: uptime_str += f"{days}d "
     uptime_str += f"{hours}h {mins}m {secs}s"
 
+    ytdlp_version = "Unknown"
+    try:
+        ytdlp_version = yt_dlp.version.__version__
+    except:
+        pass
+
     stats_text = (
         f"📊 **Server Stats**\n\n"
         f"🖥 **CPU:** `{cpu_percent}%`\n"
@@ -938,7 +990,9 @@ async def stats_command(_, message):
         f"💾 **Data Disk (500GB):** `{data_disk.percent}%` ({format_bytes(data_disk.used)} / {format_bytes(data_disk.total)})\n"
         f"🤖 **Bot Memory:** `{format_bytes(proc_mem)}`\n"
         f"⏱ **Uptime:** `{uptime_str}`\n"
-        f"📥 **Active Downloads:** `{len(ACTIVE_DOWNLOADS)}`"
+        f"📥 **Active Downloads:** `{len(ACTIVE_DOWNLOADS)}`\n"
+        f"👥 **Total Users:** `{get_total_users()}`\n"
+        f"📦 **yt-dlp Version:** `{ytdlp_version}`"
     )
     await message.reply_text(stats_text, quote=True)
 
@@ -982,6 +1036,7 @@ async def playlist_command(client, message):
         return
 
     user_id = message.from_user.id
+    CANCELLED_USERS.discard(user_id) # Reset cancellation state
     if user_id in ACTIVE_DOWNLOADS:
         await message.reply_text("You already have an active download. Please wait or /cancel.", quote=True)
         return
@@ -998,11 +1053,12 @@ async def playlist_command(client, message):
     status_msg = await message.reply_text("🔍 **Fetching playlist info...**", quote=True)
 
     try:
+        download_dir = get_timestamp_user_dir(user_id)
         # Step 1: Extract playlist metadata (flat = just titles & URLs, no full download)
-        ydl_opts = get_base_ydl_opts(custom_opts={'extract_flat': True}, url=url)
+        ydl_opts = get_base_ydl_opts(custom_opts={'extract_flat': True}, url=url, user_id=user_id, outtmpl_dir=download_dir)
 
         # Use standardized retry helper
-        info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=False)
+        info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=False, user_id=user_id)
 
         if info.get('_type') != 'playlist' and not info.get('entries'):
             await status_msg.edit_text("❌ This doesn't look like a playlist URL.\nUse `/dl` for single videos.")
@@ -1052,10 +1108,10 @@ async def playlist_command(client, message):
                     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
                     'writethumbnail': True,
                     'noplaylist': True,
-                }, url=video_url)
+                }, url=video_url, user_id=user_id, outtmpl_dir=download_dir)
 
                 # Use standardized retry helper for download
-                video_info = await asyncio.to_thread(yt_dlp_call_with_retry, video_url, dl_opts, download=True)
+                video_info = await asyncio.to_thread(yt_dlp_call_with_retry, video_url, dl_opts, download=True, user_id=user_id)
                 file_path = yt_dlp.YoutubeDL(dl_opts).prepare_filename(video_info)
 
                 # Find the actual file (yt-dlp may change extension after merge)
@@ -1073,7 +1129,7 @@ async def playlist_command(client, message):
                         f"⬆️ Uploading **{i}/{total_videos}**: `{video_title}`\n"
                         f"✅ Success: {success_count} | ❌ Failed: {fail_count}"
                     )
-                    await upload_file(client, message, message.chat.id, file_path, caption=f"**Playlist:** {playlist_title}\n\n**Video:** `{video_title}`")
+                    await upload_file(client, message, message.chat.id, file_path, caption=f"**Playlist:** {playlist_title}\n\n**Video:** `{video_title}`", url=video_url)
                     success_count += 1
                 else:
                     fail_count += 1
@@ -1107,6 +1163,8 @@ async def playlist_command(client, message):
 
     finally:
         ACTIVE_DOWNLOADS.pop(user_id, None)
+        if download_dir and os.path.exists(download_dir):
+            shutil.rmtree(download_dir)
 
 
 async def render_search_page(client, message, user_id, page=0):
@@ -1179,7 +1237,8 @@ async def search_command(client, message):
         # We search for 20 items to allow for 4 pages of 5 results
         search_query = f"ytsearch20:{query}"
 
-        info = await _yt_extract_info(search_query, ydl_opts)
+        CANCELLED_USERS.discard(user_id)
+        info = await _yt_extract_info(search_query, ydl_opts, user_id=user_id)
         
         entries = info.get('entries', [])
         if not entries:
@@ -1312,6 +1371,7 @@ async def cancel_command(client, message):
     user_id = message.from_user.id
     if user_id in ACTIVE_DOWNLOADS:
         await message.reply_text("Cancelling your download...", quote=True)
+        CANCELLED_USERS.add(user_id)
         ACTIVE_DOWNLOADS[user_id].cancel()
     else:
         await message.reply_text("You have no active downloads to cancel.", quote=True)
@@ -1322,6 +1382,7 @@ async def cancel_callback(client, callback_query):
     user_id = callback_query.from_user.id
     if user_id in ACTIVE_DOWNLOADS:
         await callback_query.answer("Cancelling...")
+        CANCELLED_USERS.add(user_id)
         ACTIVE_DOWNLOADS[user_id].cancel()
     else:
         await callback_query.answer("No active download to cancel.", show_alert=True)
@@ -1417,7 +1478,7 @@ async def torrent_handler(client, message):
             if file_name.endswith(('.!qB', '.parts')): continue  # Skip temp files
             upload_caption = f"**Downloaded via Torrent:**\n`{file_name}`"
             # MODIFIED: Pass message.chat.id to send the file to the user
-            await upload_file(client, message, message.chat.id, file_path, caption=upload_caption)
+            await upload_file(client, message, message.chat.id, file_path, caption=upload_caption, url=url)
 
         await status_message.edit_text("✅ **All torrent uploads complete!**")
 
@@ -1442,14 +1503,14 @@ async def torrent_handler(client, message):
 
 # ---- Universal Social Media Downloader ----
 # Helper: extract info from any supported URL
-async def _yt_extract_info(url: str, custom_opts: dict = None) -> dict:
+async def _yt_extract_info(url: str, custom_opts: dict = None, user_id=None) -> dict:
     """Extract media info from any yt-dlp supported URL."""
     ydl_opts = get_base_ydl_opts(custom_opts={'noplaylist': True, 'format': 'all'}, url=url)
     if custom_opts:
         ydl_opts.update(custom_opts)
         
     # Standardized retry helper (already handles reloads and rotate-clients)
-    info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=False)
+    info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=False, user_id=user_id)
     return info
 
 
@@ -1618,8 +1679,9 @@ async def _process_social_media_url(client, message, url):
     platform_emoji, platform_name = _detect_platform(url)
     status_message = await message.reply_text(f"🔍 Extracting info from **{platform_name}**…", quote=True)
 
+    CANCELLED_USERS.discard(user_id)
     try:
-        info = await _yt_extract_info(url)
+        info = await _yt_extract_info(url, user_id=user_id)
         if not info:
             raise Exception("Extractor returned empty or null information.")
 
@@ -1629,6 +1691,9 @@ async def _process_social_media_url(client, message, url):
         duration = info.get('duration') or 0
         extractor = info.get('extractor', '').lower()
 
+        # Create isolated download directory for this session
+        download_dir = get_timestamp_user_dir(user_id)
+
         # Store session for callbacks
         YT_SESSIONS[user_id] = {
             'url': url,
@@ -1636,6 +1701,7 @@ async def _process_social_media_url(client, message, url):
             'message': message,
             'platform': platform_name,
             'platform_emoji': platform_emoji,
+            'download_dir': download_dir,
         }
 
         # Build info text
@@ -1827,6 +1893,7 @@ async def insta_command(client, message):
             f"👤 **Following:** {info.get('following', 0):,}\n"
             f"📷 **Posts:** {info.get('posts', 0):,}\n"
             f"🔐 **Status:** {private}\n"
+            f"\n🔗 [Profile Link](https://www.instagram.com/{username})\n"
         )
         if info['external_url']:
             text += f"🔗 **Link:** {info['external_url']}\n"
@@ -1838,11 +1905,13 @@ async def insta_command(client, message):
             pic_data = await asyncio.to_thread(lambda: req.get(info['profile_pic_url'], timeout=10).content)
             with open(pic_path, 'wb') as f:
                 f.write(pic_data)
-            await client.send_photo(
+            sent_msg = await client.send_photo(
                 chat_id=message.chat.id,
                 photo=pic_path,
                 caption=text
             )
+            if sent_msg and MEDIA_BACKUP_CHANNEL:
+                await sent_msg.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=text)
             await status_msg.delete()
             os.remove(pic_path)
         except Exception:
@@ -2032,6 +2101,7 @@ async def yt_quick_callback(client, callback_query):
     info = session['info']
     original_message = session['message']
     platform_emoji = session.get('platform_emoji', '🌐')
+    download_dir = session.get('download_dir')
 
     await callback_query.message.edit_text(f"⏳ **Downloading best quality from {session.get('platform', 'Website')}…**")
     status_message = callback_query.message
@@ -2078,7 +2148,7 @@ async def yt_quick_callback(client, callback_query):
             'writethumbnail': True,
             'noplaylist': True,
             'progress_hooks': [progress_hook],
-        }, url=url)
+        }, url=url, user_id=user_id, outtmpl_dir=download_dir)
 
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -2121,7 +2191,7 @@ async def yt_quick_callback(client, callback_query):
         caption = f"{platform_emoji} **{title}**"
 
         await status_message.edit_text("⬆️ **Uploading to Telegram…**")
-        await upload_file(client, original_message, original_message.chat.id, file_path, caption, final_thumb_path)
+        await upload_file(client, original_message, original_message.chat.id, file_path, caption, final_thumb_path, url=info.get('webpage_url', ''))
 
     except CancelledError:
         try:
@@ -2137,8 +2207,8 @@ async def yt_quick_callback(client, callback_query):
     finally:
         if user_id in ACTIVE_DOWNLOADS:
             del ACTIVE_DOWNLOADS[user_id]
-        if thumb_path_to_clean and os.path.exists(thumb_path_to_clean):
-            os.remove(thumb_path_to_clean)
+        if download_dir and os.path.exists(download_dir):
+            shutil.rmtree(download_dir)
 
 
 # ---- Download sniffed format ----
@@ -2175,6 +2245,7 @@ async def sniff_dl_callback(client, callback_query):
 
     ACTIVE_DOWNLOADS[user_id] = True
     file_path = None
+    download_dir = get_timestamp_user_dir(user_id)
     
     try:
         last_update_time = 0
@@ -2209,12 +2280,12 @@ async def sniff_dl_callback(client, callback_query):
         ydl_opts = get_base_ydl_opts(download=True, custom_opts={
             'noplaylist': True,
             'progress_hooks': [progress_hook],
-        }, url=full_url)
+        }, url=full_url, user_id=user_id, outtmpl_dir=download_dir)
             
         await status_message.edit_text("⏳ **Downloading stream via yt-dlp...**\nThis might take a moment depending on the stream server.")
         
         # Run yt-dlp to stitch and download the stream
-        info = await asyncio.to_thread(_download_with_ytdlp, full_url, ydl_opts)
+        info = await asyncio.to_thread(_download_with_ytdlp, full_url, ydl_opts, user_id=user_id)
         
         if not info:
              raise Exception("Failed to download stream.")
@@ -2235,15 +2306,15 @@ async def sniff_dl_callback(client, callback_query):
         # Determine duration
         duration = info.get('duration')
         
-        await upload_file(client, callback_query.message, callback_query.message.chat.id, file_path, caption=f"**Sniffed Stream:**\n`{full_url}`", duration=duration)
+        await upload_file(client, callback_query.message, callback_query.message.chat.id, file_path, caption=f"**Sniffed Stream:**\n`{full_url}`", duration=duration, url=full_url)
         
     except FileNotFoundError as e:
          pass # Cancelled
-    except Exception as e:
-        await status_message.edit_text(f"❌ **Download Error:** `{str(e)}`")
     finally:
         if user_id in ACTIVE_DOWNLOADS:
             del ACTIVE_DOWNLOADS[user_id]
+        if download_dir and os.path.exists(download_dir):
+            shutil.rmtree(download_dir)
 
 
 # ---- Download selected format ----
@@ -2278,6 +2349,7 @@ async def yt_dl_callback(client, callback_query):
     url = session['url']
     info = session['info']
     original_message = session['message']
+    download_dir = session.get('download_dir')
 
     # Remove the menu buttons
     await callback_query.message.edit_text("⏳ **Preparing download…**")
@@ -2346,11 +2418,9 @@ async def yt_dl_callback(client, callback_query):
 
         # Build base options (shared between attempts)
         base_opts = get_base_ydl_opts(download=True, custom_opts={
-            'format': 'bestvideo+bestaudio/best',
-            'writethumbnail': True,
             'noplaylist': True,
             'progress_hooks': [progress_hook],
-        }, url=url)
+        }, url=url, user_id=user_id, outtmpl_dir=download_dir)
 
         # Use standardized retry helper for download
         # This helper function needs to be defined elsewhere in your code, e.g., in utils.py
@@ -2380,7 +2450,7 @@ async def yt_dl_callback(client, callback_query):
             try:
                 ydl_opts = {**base_opts, 'format': fmt_str}
                 # Use standardized retry helper for download
-                info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=True)
+                info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=True, user_id=user_id)
                 prepared = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
                 download_success = True
                 break
@@ -2439,7 +2509,7 @@ async def yt_dl_callback(client, callback_query):
         caption = f"{type_emoji} **{title}**\n👤 **Uploader:** {uploader}\n👀 **Views:** {views:,}"
 
         await status_message.edit_text("⬆️ **Uploading to Telegram…**")
-        await upload_file(client, original_message, original_message.chat.id, file_path, caption, final_thumb_path)
+        await upload_file(client, original_message, original_message.chat.id, file_path, caption, final_thumb_path, url=info.get('webpage_url', ''))
 
     except CancelledError:
         try:
@@ -2455,8 +2525,8 @@ async def yt_dl_callback(client, callback_query):
     finally:
         if user_id in ACTIVE_DOWNLOADS:
             del ACTIVE_DOWNLOADS[user_id]
-        if thumb_path_to_clean and os.path.exists(thumb_path_to_clean):
-            os.remove(thumb_path_to_clean)
+        if download_dir and os.path.exists(download_dir):
+            shutil.rmtree(download_dir)
 
 
 # ---- YouTube: Captions ----
@@ -2570,6 +2640,7 @@ async def yt_caption_dl_callback(client, callback_query):
 
     caption_path = None
     try:
+        download_dir = session.get('download_dir') or DOWNLOAD_DIRECTORY
         ydl_opts = get_base_ydl_opts(download=True, custom_opts={
             'skip_download': True,
             'writesubtitles': sub_type == 'subtitles',
@@ -2577,10 +2648,11 @@ async def yt_caption_dl_callback(client, callback_query):
             'subtitleslangs': [lang],
             'subtitlesformat': 'srt/vtt/best',
             'noplaylist': True,
-        }, url=url)
+        }, url=url, user_id=user_id, outtmpl_dir=download_dir)
         
         # Use standardized retry helper
-        info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=True)
+        user_id = callback_query.from_user.id
+        info = await asyncio.to_thread(yt_dlp_call_with_retry, url, ydl_opts, download=True, user_id=user_id)
         prepared = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
 
         base, _ = os.path.splitext(prepared)
@@ -2593,7 +2665,7 @@ async def yt_caption_dl_callback(client, callback_query):
         # Also search for lang-dotted pattern
         if not caption_path:
             import glob as g
-            pattern = os.path.join(DOWNLOAD_DIRECTORY, f"*{lang}*")
+            pattern = os.path.join(download_dir, f"*{lang}*")
             matches = [f for f in g.glob(pattern) if f.endswith(('.srt', '.vtt'))]
             if matches:
                 caption_path = matches[0]
@@ -2602,11 +2674,13 @@ async def yt_caption_dl_callback(client, callback_query):
             raise RuntimeError(f"Caption file for '{lang}' not found after download.")
 
         cap_label = f"📝 **{title}** — {lang} captions"
-        await client.send_document(
+        sent_msg = await client.send_document(
             chat_id=original_message.chat.id,
             document=caption_path,
             caption=cap_label,
         )
+        if sent_msg and MEDIA_BACKUP_CHANNEL:
+            await sent_msg.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=cap_label)
         await callback_query.message.edit_text(f"✅ **Caption ({lang}) sent!**")
 
     except Exception as e:
@@ -2633,6 +2707,7 @@ async def yt_details_callback(client, callback_query):
     await callback_query.answer()
     info = session['info']
     original_message = session['message']
+    download_dir = session.get('download_dir') or DOWNLOAD_DIRECTORY
 
     title = info.get('title', 'N/A')
     uploader = info.get('uploader', 'N/A')
@@ -2642,6 +2717,9 @@ async def yt_details_callback(client, callback_query):
     description = info.get('description', '')
     categories = ', '.join(info.get('categories', [])) or 'N/A'
     webpage_url = info.get('webpage_url', '')
+    
+    views = info.get('view_count') or 0
+    likes = info.get('like_count') or 0
 
     # Format upload date
     if upload_date and upload_date != 'N/A' and len(upload_date) == 8:
@@ -2665,14 +2743,15 @@ async def yt_details_callback(client, callback_query):
     if webpage_url:
         details_text += f"🔗 **URL:** {webpage_url}\n"
     if description:
-        details_text += f"\n📝 **Description:**\n{description}\n"
+        details_text += f"\n📖 **Description:**\n{description}\n"
+    details_text += f"\n🔗 [Source Link]({session.get('url', '')})\n"
 
     # Send thumbnail if available
     thumbnail_url = info.get('thumbnail')
     thumb_path = None
     try:
         if thumbnail_url:
-            thumb_path = os.path.join(DOWNLOAD_DIRECTORY, f"thumb_{user_id}_{int(time.time())}.jpg")
+            thumb_path = os.path.join(download_dir, f"thumb_{user_id}_{int(time.time())}.jpg")
             r = requests.get(thumbnail_url, timeout=10)
             r.raise_for_status()
             with open(thumb_path, 'wb') as f:
@@ -2686,11 +2765,13 @@ async def yt_details_callback(client, callback_query):
                 os.remove(thumb_path)
                 thumb_path = jpg_path
 
-            await client.send_photo(
+            sent_msg = await client.send_photo(
                 chat_id=original_message.chat.id,
                 photo=thumb_path,
                 caption=details_text,
             )
+            if sent_msg and MEDIA_BACKUP_CHANNEL:
+                await sent_msg.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=details_text)
         else:
             await original_message.reply_text(details_text, quote=True, disable_web_page_preview=True)
     except Exception as e:
@@ -2729,6 +2810,7 @@ async def url_handler(client, message):
     url = message.text.split(" ", 1)[1].strip()
     status_message = await message.reply_text("Starting download from URL…", quote=True)
     output_path = None
+    download_dir = get_timestamp_user_dir(user_id)
     cancel_button = InlineKeyboardMarkup([[InlineKeyboardButton("Cancel", callback_data="cancel")]])
 
     try:
@@ -2762,7 +2844,7 @@ async def url_handler(client, message):
 
             # Sanitize filename
             real_filename = re.sub(r'[<>:"/\\|?*]', '_', real_filename).strip()
-            output_path = os.path.join(DOWNLOAD_DIRECTORY, real_filename)
+            output_path = os.path.join(download_dir, real_filename)
 
             last_update_time = time.time()
             start_time = time.time()
@@ -2798,7 +2880,7 @@ async def url_handler(client, message):
         file_basename = os.path.basename(output_path)
         await status_message.edit_text(f"**Download complete:** `{file_basename}`\n\nNow preparing to upload…")
         # MODIFIED: Pass message.chat.id to send the file to the user
-        await upload_file(client, message, message.chat.id, output_path, caption=f"**Downloaded from URL:**\n`{file_basename}`")
+        await upload_file(client, message, message.chat.id, output_path, caption=f"**Downloaded from URL:**\n`{file_basename}`", url=url)
     except CancelledError:
         await status_message.edit_text("🚫 **Download Canceled!**")
     except Exception as e:
@@ -2807,7 +2889,8 @@ async def url_handler(client, message):
     finally:
         if user_id in ACTIVE_DOWNLOADS:
             del ACTIVE_DOWNLOADS[user_id]
-        # output_path is kept for 3 hours for the web direct link
+        if download_dir and os.path.exists(download_dir):
+            shutil.rmtree(download_dir)
 
 
 # ---- YouTube Search Callbacks ----
@@ -2991,7 +3074,7 @@ async def web_api_info(request):
         print(f"[Web API) Fetching info for: {url}")
         
         # Use common extractor
-        info = await _yt_extract_info(url)
+        info = await _yt_extract_info(url, user_id=None)
         
         # Categorized lists for the new UI
         video_formats, audio_formats = _get_enriched_formats(info)
@@ -3073,7 +3156,7 @@ async def web_ws_download(request):
                 try:
                     ydl_opts = {**base_opts, 'format': fmt_str}
                     # Use standardized retry helper for download
-                    info = yt_dlp_call_with_retry(url, ydl_opts, download=True)
+                    info = yt_dlp_call_with_retry(url, ydl_opts, download=True, user_id=None)
                     filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
                     
                     # Double check if yt-dlp added an extension it didn't tell us about
@@ -3156,6 +3239,51 @@ async def auto_cleanup():
             last_daily_clean = now
 
 
+async def auto_update_ytdlp():
+    """
+    Background task to update yt-dlp every 2 hours to keep bypasses fresh.
+    """
+    while True:
+        try:
+            print("[AUTO-UPDATE] Checking for yt-dlp updates...")
+            # Use pip to update yt-dlp
+            proc = await asyncio.create_subprocess_exec(
+                "pip", "install", "-U", "yt-dlp",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                # Get the new version to log it
+                import yt_dlp
+                import importlib
+                importlib.reload(yt_dlp.version)
+                new_version = yt_dlp.version.__version__
+                print(f"[AUTO-UPDATE] yt-dlp status: Updated/Verified (Version: {new_version})")
+            else:
+                print(f"[AUTO-UPDATE] yt-dlp update failed: {stderr.decode().strip()}")
+            
+            # Update the bot's "monthly users" description to match the user's requested style
+            try:
+                user_count = get_total_users()
+                # Format with commas like the example (e.g. 6,456)
+                formatted_count = "{:,}".format(user_count)
+                # Use direct Telegram API since Pyrogram version might be too old for set_my_short_description
+                url = f"https://api.telegram.org/bot{BOT_TOKEN}/setMyShortDescription"
+                resp = requests.post(url, json={"short_description": f"{formatted_count} monthly users"}, timeout=10)
+                if resp.status_code == 200:
+                    print(f"[AUTO-UPDATE] Updated bot short description to: {formatted_count} monthly users")
+                else:
+                    print(f"[AUTO-UPDATE] Failed to update short description: {resp.text}")
+            except Exception as e:
+                print(f"[AUTO-UPDATE] Failed to update short description: {e}")
+        except Exception as e:
+            print(f"[AUTO-UPDATE] Unexpected error during update: {e}")
+        
+        # Wait for 2 hours (7200 seconds)
+        await asyncio.sleep(7200)
+
+
 async def send_wa_message(to, text, file_path=None, direct_link=None):
     """
     Send a message back to WhatsApp via the Node.js bridge.
@@ -3172,8 +3300,9 @@ async def wa_process_url(wa_from, url, host="aharbot.qzz.io"):
     Extract info and send format selection to WhatsApp.
     """
     try:
+        CANCELLED_USERS.discard(wa_from)
         await send_wa_message(wa_from, "🔍 **Extracting info...** Please wait.")
-        info = await _yt_extract_info(url)
+        info = await _yt_extract_info(url, user_id=wa_from)
         if not info:
              await send_wa_message(wa_from, "❌ **Failed to extract info.** Unsupported link or temporary error.")
              return
@@ -3217,7 +3346,7 @@ async def wa_background_direct_download(url, file_hash, format_info):
         opts = get_base_ydl_opts(url=url, download=True)
         opts['format'] = format_info.get('format_id', 'best')
         
-        result = await asyncio.to_thread(yt_dlp_call_with_retry, url, opts, download=True)
+        result = await asyncio.to_thread(yt_dlp_call_with_retry, url, opts, download=True, user_id=None) # wa_from not easily available here
         if result and not isinstance(result, str):
             downloads = result.get('requested_downloads', [])
             if downloads:
@@ -3244,7 +3373,8 @@ async def wa_download_format(wa_from, url, fmt):
         ydl_opts['format'] = f"{format_id}+bestaudio/best"
         
         loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, lambda: yt_dlp_call_with_retry(url, ydl_opts, download=True))
+        info = await loop.run_in_executor(None, lambda: yt_dlp_call_with_retry(url, ydl_opts, download=True, user_id=wa_from))
+        CANCELLED_USERS.discard(wa_from)
         
         file_path = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
         if not os.path.exists(file_path):
@@ -3443,8 +3573,9 @@ async def main():
     except Exception as e:
         print(f"Failed to set commands: {e}")
 
-    # Start the cleanup task
+    # Start the background tasks
     asyncio.create_task(auto_cleanup())
+    asyncio.create_task(auto_update_ytdlp())
     
     # Keep running
     await idle()
