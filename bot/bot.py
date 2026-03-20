@@ -29,6 +29,10 @@ import random
 import traceback
 
 from pyrogram import Client, filters, idle
+from dotenv import load_dotenv
+
+# Use absolute path for .env to ensure it works with systemd
+load_dotenv("/home/azureuser/aharbot/bot/.env")
 
 # --- Web Server Data ---
 ACTIVE_LINKS = {}  # { 'hash': {'path': '/datadrive/downloads/file.mp4', 'expiry': timestamp, 'name': 'file.mp4'} }
@@ -42,17 +46,21 @@ import nest_asyncio
 nest_asyncio.apply()
 
 # --- BOT CONFIG ---
-API_ID = *******
-API_HASH = "********************"
-BOT_TOKEN = "**********:**********************"
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # --- CHANNELS ---
 # Bot must be an admin in this channel for force-sub to work.
-FORCE_SUB_CHANNEL = "@aharbots"
-MEDIA_BACKUP_CHANNEL = "-1003253205053"
+FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL")
+MEDIA_BACKUP_CHANNEL = os.getenv("MEDIA_BACKUP_CHANNEL")
+
+# --- ADMIN CONFIG ---
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_TG_HANDLE = os.getenv("ADMIN_TG_HANDLE")
 
 # --- PATHS & ENVIRONMENT ---
-WEB_DOMAIN = "aharbot.qzz.io"
+WEB_DOMAIN = os.getenv("WEB_DOMAIN")
 # Add Deno to PATH and set runtime for yt-dlp JS challenges
 DENO_BIN_DIR = "/home/azureuser/.deno/bin"
 if os.path.exists(DENO_BIN_DIR):
@@ -66,7 +74,7 @@ os.makedirs(DOWNLOAD_DIRECTORY, exist_ok=True)
 print("Bot configured to use the 500GB partition at /datadrive while downloading everthings.")
 COOKIES_FILE = "/home/azureuser/aharbot/bot/cookies.txt"
 INSTAGRAM_COOKIES_FILE = "/home/azureuser/aharbot/bot/instagram_cookies.txt"
-USERS_FILE = "./users.txt"
+USERS_FILE = "/home/azureuser/aharbot/bot/users.txt"
 FEEDBACKS_FILE = "/home/azureuser/aharbot/bot/feedbacks.json"
 
 
@@ -139,40 +147,50 @@ async def daily_recommendation_loop(client):
     print("[DailyMusic] Starting background recommendation loop...")
     while True:
         try:
-            # Wait for 24 hours
-            # For testing/initial start, we can wait a bit or send immediately if first time
-            curr_hour = time.localtime().tm_hour
             # Target hour: 10 AM (arbitrary)
+            curr_hour = time.localtime().tm_hour
             if curr_hour == 10:
-                music = await get_random_music_recommendation()
-                if music:
-                    users = []
-                    if os.path.exists(USERS_FILE):
-                        with open(USERS_FILE, "r") as f:
-                            users = [line.strip() for line in f if line.strip()]
-                    
-                    print(f"[DailyMusic] Sending '{music['title']}' to {len(users)} users.")
-                    msg_text = (
-                        "🌟 **Daily Music Recommendation** 🌟\n\n"
-                        f"🎵 **{music['title']}**\n"
-                        f"👤 By: {music['uploader'] or 'YouTube'}\n\n"
-                        f"🔗 {music['url']}\n\n"
-                        "💡 *Tip: Just click the link and I'll help you download it if you want!*"
-                    )
-                    
-                    for user_id in users:
-                        try:
-                            await client.send_message(chat_id=int(user_id), text=msg_text)
-                            await asyncio.sleep(0.1) # Flood prevention
-                        except Exception as e:
-                            print(f"[DailyMusic] Failed to send to {user_id}: {e}")
+                await send_daily_recommendation(client)
                 
             # Sleep for 1 hour before checking again
             await asyncio.sleep(3600)
         except Exception as e:
             print(f"[DailyMusic] Loop error: {e}")
             await asyncio.sleep(60)
-WHATSAPP_BRIDGE_URL = "http://localhost:3000/send"
+
+async def send_daily_recommendation(client, target_user=None):
+    """Fetches and sends a music recommendation to users."""
+    music = await get_random_music_recommendation()
+    if not music:
+        return
+
+    users = []
+    if target_user:
+        users = [str(target_user)]
+    else:
+        if os.path.exists(USERS_FILE):
+            with open(USERS_FILE, "r") as f:
+                users = list(set(line.strip() for line in f if line.strip()))
+    
+    print(f"[DailyMusic] Sending '{music['title']}' to {len(users)} users.")
+    msg_text = (
+        "🌟 **Daily Music Recommendation** 🌟\n\n"
+        f"🎵 **{music['title']}**\n"
+        f"👤 By: {music['uploader'] or 'YouTube'}\n\n"
+        f"🔗 {music['url']}\n\n"
+        "💡 *Tip: Just click the link and I'll help you download it if you want!*"
+    )
+    
+    for user_id in users:
+        try:
+            await client.send_message(chat_id=int(user_id), text=msg_text)
+            await asyncio.sleep(0.1) # Flood prevention
+        except Exception as e:
+            print(f"[DailyMusic] Failed to send to {user_id}: {e}")
+        except Exception as e:
+            print(f"[DailyMusic] Loop error: {e}")
+            await asyncio.sleep(60)
+WHATSAPP_BRIDGE_URL = os.getenv("WHATSAPP_BRIDGE_URL")
 SUBSCRIPTIONS_FILE = "/home/azureuser/aharbot/bot/subscriptions.json"
 
 def load_subscriptions():
@@ -474,7 +492,7 @@ AI_CONVERSATIONS = {}  # user_id -> list of message dicts
 
 # --- Ollama AI Client ---
 OLLAMA_API_KEY_FILE = "/home/azureuser/aharbot/bot/ollama_api.txt"
-OLLAMA_API_KEY = "REDACTED_OLLAMA_KEY"
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 
 if os.path.exists(OLLAMA_API_KEY_FILE):
     try:
@@ -849,7 +867,7 @@ async def admin_contact(client, message):
     )
 
     try:
-        await client.send_message(7962617461, admin_msg)
+        await client.send_message(ADMIN_ID, admin_msg)
         await message.reply_text("✅ **Your message has been sent to the admin!**\nThey will get back to you soon.", quote=True)
     except Exception as e:
         await message.reply_text(f"❌ Failed to send message: `{e}`", quote=True)
@@ -882,7 +900,7 @@ async def delall_command(client, message):
 
 @app.on_message(filters.command("broadcast") & filters.reply)
 async def broadcast_command(client, message):
-    if message.from_user.id != 7962617461:
+    if message.from_user.id != ADMIN_ID:
         await message.reply_text("❌ You are not authorized to use this command.")
         return
         
@@ -921,7 +939,7 @@ async def broadcast_command(client, message):
 # ---- Server Management (Admin Only) ----
 @app.on_message(filters.command("logs") & filters.private)
 async def logs_command(client, message):
-    if message.from_user.id != 7962617461:
+    if message.from_user.id != ADMIN_ID:
         await message.reply_text("❌ You are not authorized.", quote=True)
         return
 
@@ -943,7 +961,7 @@ async def logs_command(client, message):
 
 @app.on_message(filters.command("restart") & filters.private)
 async def restart_command(client, message):
-    if message.from_user.id != 7962617461:
+    if message.from_user.id != ADMIN_ID:
         await message.reply_text("❌ You are not authorized.", quote=True)
         return
 
@@ -956,7 +974,7 @@ async def restart_command(client, message):
 
 @app.on_message(filters.command("backup") & filters.private)
 async def backup_command(client, message):
-    if message.from_user.id != 7962617461:
+    if message.from_user.id != ADMIN_ID:
         await message.reply_text("❌ You are not authorized.", quote=True)
         return
 
@@ -990,7 +1008,7 @@ async def backup_command(client, message):
 # ---- Remote Terminal (Admin Only) ----
 @app.on_message(filters.command("shell") & filters.private)
 async def shell_command(client, message):
-    if message.from_user.id != 7962617461:
+    if message.from_user.id != ADMIN_ID:
         await message.reply_text("❌ You are not authorized.", quote=True)
         return
 
@@ -1033,7 +1051,7 @@ async def shell_command(client, message):
 
 @app.on_message(filters.command("exec") & filters.private)
 async def exec_command(client, message):
-    if message.from_user.id != 7962617461:
+    if message.from_user.id != ADMIN_ID:
         await message.reply_text("❌ You are not authorized.", quote=True)
         return
 
@@ -1376,10 +1394,15 @@ async def help_command(client, message):
             "• `/newchat` — start a fresh AI conversation\n\n"
             "**📩 Contact:**\n"
             "• `/admin <message>` — send a message to the admin\n"
-            "• Admin: @riz5652\n\n"
+            "• Admin: " + ADMIN_TG_HANDLE + "\n\n"
             "**🧲 OSINT & Scraping:**\n"
             "• `/insta <username>` — scrape Instagram profile\n"
             "• `/whatsapp <number>` — check WhatsApp account\n\n"
+            "**📺 YouTube Subscriptions:**\n"
+            "• `/subscribe <URL>` — subscribe to a YouTube channel\n"
+            "• `/unsubscribe` — unsub from a channel (interactive)\n"
+            "• `/channels` — list your subscribed channels\n"
+            "• `/search_channel <query>` — find channels by name\n\n"
             "**💻 Server Management (Admin):**\n"
             "• `/logs` — view last 30 lines of bot logs\n"
             "• `/restart` — restart the bot service\n"
@@ -2320,9 +2343,11 @@ async def universal_dl_handler(client, message):
 
 
 # ---- Auto-detect URLs pasted without command ----
-@app.on_message(filters.private & filters.text & ~filters.command(["start", "help", "ping", "cancel", "torrent", "url", "dl", "youtube", "download", "search", "playlist", "sniff", "stats", "speedtest", "newchat", "delall", "broadcast", "admin", "logs", "restart", "backup", "shell", "exec", "insta", "whatsapp"]))
+@app.on_message(filters.private & filters.text & ~filters.command(["start", "help", "ping", "cancel", "torrent", "url", "dl", "youtube", "download", "search", "playlist", "sniff", "stats", "speedtest", "newchat", "delall", "broadcast", "admin", "logs", "restart", "backup", "shell", "exec", "insta", "whatsapp", "test_recommendation", "subscribe", "unsubscribe", "channels", "search_channel", "addapi"]))
 async def auto_detect_url_handler(client, message):
     """Auto-detect supported URLs pasted without any command."""
+    if message.from_user:
+        log_user(message.from_user.id)
     if not message.text:
         return
 
@@ -2447,6 +2472,16 @@ async def _process_social_media_url(client, message, url):
 
 
 # ---- Instagram Scraper ----
+@app.on_message(filters.command("test_recommendation") & filters.private)
+async def test_recommendation_handler(client, message):
+    """Manually trigger a daily recommendation for testing (Admin Only)."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    await message.reply_text("🔄 Fetching and sending a test recommendation to all logged users...", quote=True)
+    await send_daily_recommendation(client)
+    await message.reply_text("✅ Test recommendation sent!", quote=True)
+
+
 @app.on_message(filters.command("insta"))
 async def insta_command(client, message):
     if not await check_membership(client, message):
@@ -2605,7 +2640,7 @@ async def insta_command(client, message):
 
 @app.on_message(filters.command("addapi"))
 async def addapi_command(client, message):
-    if message.from_user.id != 7962617461:
+    if message.from_user.id != ADMIN_ID:
         await message.reply_text("❌ You are not authorized to use this command.")
         return
 

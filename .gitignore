@@ -161,6 +161,10 @@ bot/instagram_cookies.txt
 bot/youtube_cookies.txt
 bot/*.png
 bot/*.html
+bot/whatsapp_session/
+bot/whatsapp_bridge.log
+bot/bridge_supervisor.log
+bot/.wwebjs_cache/
 web/static/*.png
 web/static/*.jpg
 web/static/*.webp
@@ -168,6 +172,8 @@ downloads/
 /datadrive/downloads/
 /tmp/
 *.tmp
+*.session
+*.session-journal
 debug_lens.py
 test_lens_url.py
 test_lens.py
@@ -183,3 +189,4 @@ cookies.txt
 instagram_cookies.txt
 nohup.out
 users.txt
+test_session.session
