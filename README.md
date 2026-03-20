@@ -104,6 +104,51 @@ A premium, high-performance universal media downloader, streamer, and AI assista
 
 ---
 
+## 🌐 Domain & Cloudflare Setup (Exposure)
+
+Expose your local bot to the internet using a free domain and Cloudflare Tunnels (no port forwarding required).
+
+### Step 1: Get a Free Domain
+1.  Visit [DPDNS.org](https://dpdns.org) or [QZZ.io](https://qzz.io).
+2.  Register and create a free hostname (e.g., `aharbot.qzz.io`).
+3.  Point your domain's Name Servers (NS) to Cloudflare if prompted, or use the DDNS features provided.
+
+### Step 2: Install & Configure Cloudflared
+1.  **Download Cloudflared:**
+    ```bash
+    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+    sudo dpkg -i cloudflared.deb
+    ```
+2.  **Authenticate:**
+    ```bash
+    cloudflared tunnel login
+    ```
+3.  **Create a Tunnel:**
+    ```bash
+    cloudflared tunnel create ahar-tunnel
+    ```
+
+### Step 3: Configure Ingress Rules
+Create/Edit your `~/.cloudflared/config.yml`:
+```yaml
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /home/user/.cloudflared/YOUR_TUNNEL_ID.json
+
+ingress:
+  - hostname: aharbot.qzz.io  # Your free domain
+    service: http://127.0.0.1:8080
+  - service: http_status:404
+```
+
+### Step 4: Start the Tunnel
+```bash
+cloudflared tunnel run ahar-tunnel
+```
+
+---
+
+---
+
 ## 🏗️ Technical Stack
 - **Backend:** Python 3.10 (Pyrogram)
 - **WhatsApp Bridge:** Node.js (whatsapp-web.js)
