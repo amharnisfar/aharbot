@@ -15,17 +15,11 @@ A premium, high-performance universal media downloader and streamer. This bot in
 ## 🛠️ Command Reference (The "What & How")
 
 ### 👤 User Commands
-- **`/dl [URL]`** (or `/youtube`, `/download`): The heart of the bot. Paste any link to start the interactive "Fetch" process.
-- **`/start`**: Initializes the bot and provides a quick-start guide.
-- **`/help`**: Displays advanced usage instructions and supported platforms.
-- **`/search [query]`**: Searches YouTube for videos and returns interactive download buttons.
-- **`/playlist [URL]`**: Fetches an entire series of videos. (Note: Large playlists may trigger the 3-hour Web Link fallback).
-- **`/sniff [URL]`**: Advanced mode. Uses a headless Playwright browser to "sniff" hidden video streams from complex sites.
-- **`/torrent [link/file]`**: High-speed torrent downloader utilizing `libtorrent`.
-- **`/insta [URL]`**: Optimized handler for Instagram Reels, Stories, and Posts.
-- **`/ping`**: Checks bot latency.
-- **`/stats`**: View server load, active downloads, and disk usage.
-- **`/speedtest`**: Comprehensive network speed check.
+- **`/lens`**: (Reply to image) Smart search via Google Lens. Extracts YouTube, FB, IG, and TikTok links.
+- **`/subscribe [URL]`**: Subscribe to a YouTube channel for new video notifications.
+- **`/unsubscribe [URL]`**: Remove a channel from your subscription list.
+- **`/channels`**: List all your active YouTube subscriptions.
+- **`/search_channel [query]`**: Find and subscribe to YouTube channels directly.
 - **`/cancel`**: Immediately halts any active download task.
 
 ### 🔑 Admin & Power-User Commands
@@ -52,6 +46,30 @@ When you paste a link, the bot doesn't just "download" it. It performs a sophist
     - If the file is **Under 2GB**, it sends it directly through Telegram.
     - If it's for **WhatsApp**, it generates a **3-hour direct web link** immediately to avoid browser crashes.
     - If it's **Over 2GB**, it hosts it on the internal web server.
+
+---
+
+## 🤖 Advanced AI Features
+
+The bot is now equipped with powerful AI and automation capabilities:
+
+### 1. 🔍 Google Lens Image Search
+- **Visual Intelligence:** Reply to any image with `/lens` to analyze it.
+- **Social Media Extraction:** Automatically finds related videos and profiles on **YouTube, Facebook, Instagram, TikTok, and X**.
+- **Interactive Buttons:** Found videos are presented with descriptive buttons for instant downloading.
+
+### 2. 📝 AI Video Summarization
+- **Ollama Integration:** Utilizes local LLMs to provide concise summaries of YouTube videos.
+- **Context-Aware:** Analyzes captions and metadata to give you the key takeaways without watching the whole video.
+- **One-Click:** Triggered via the "AI Summarize" button after identifying a YouTube link.
+
+### 3. 📅 Daily Music Recommendations
+- **Automated Vibe:** Every day, all users receive a random, high-quality music recommendation from YouTube.
+- **Smart Discovery:** Uses curated search trends to find the latest hits and trending tracks.
+
+### 4. 📺 YouTube Subscriptions
+- **Stay Updated:** Follow your favorite creators and get notified the moment they upload a new video.
+- **Background Monitoring:** A robust worker checks for updates every 12 hours.
 
 ---
 

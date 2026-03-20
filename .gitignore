@@ -1,26 +1,179 @@
-# Sensitive data
-cookies.txt
-instagram_cookies.txt
-youtube_cookies.txt
-users.txt
-whatsapp_session/
-.wwebjs_cache/
-
-# Logs and temp files
-*.log
-nohup.out
-qr.png
+# Byte-compiled / optimized / DLL files
 __pycache__/
-downloads/
-/datadrive/
+*.py[cod]
+*$py.class
 
-# OS/IDEs
-.DS_Store
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a PyInstaller erected executable to
+#  a temporary directory when the executable is run.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or binary, you wish to ignore your .python-version.
+#   For a specific project, you may want to include it.
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#1181, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or even
+#   fail to install them. In that case, the lock file should be added to .gitignore.
+#Pipfile.lock
+
+# poetry
+#   Similar to Pipenv, see https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+#poetry.lock
+
+# pdm
+#   Similar to Pipenv, see https://pdm.fming.dev/#use-pdm-in-a-project
+.pdm.toml
+.pdm-python
+.pdm-build/
+
+# PEP 582; used by e.g. github.com/frenzy/venvs
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+.idea/
+
+# VS Code
 .vscode/
 
-# Build/Packages
-node_modules/
-*.deb
-dist/
-build/
-*.egg-info/
+# Local data & temp files
+bot/*.session
+bot/*.session-journal
+bot/subscriptions.json
+bot/feedbacks.json
+bot/users.txt
+bot/cookies.txt
+bot/instagram_cookies.txt
+bot/*.png
+bot/*.html
+web/static/*.png
+web/static/*.jpg
+web/static/*.webp
+downloads/
+/datadrive/downloads/
+/tmp/
+*.tmp
+debug_lens.py
+test_lens_url.py
+test_lens.py
+test_subs.py
+perf_patch.py
+test_fix_v4.py
+verify_feedback.py
+fix_thumbs.py
+test_ytdlp.py
+gen_pot.js

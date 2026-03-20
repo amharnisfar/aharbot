@@ -249,11 +249,17 @@
                     <p
                         class="text-xs md:text-sm text-emerald-400 mb-4 md:mb-6 font-semibold bg-emerald-500/10 px-3 md:px-4 py-2 rounded-full max-w-full truncate">
                         ✅ Ready! Link expires in 3 hours.
-                    </p>
                     <a id="resLink" href="#"
-                        class="inline-flex items-center justify-center w-full sm:w-auto px-6 md:px-8 py-3 md:py-4 bg-emerald-600 hover:bg-emerald-500 text-white text-base md:text-lg font-bold rounded-xl transition-colors shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+                        class="inline-flex items-center justify-center w-full sm:w-auto px-6 md:px-8 py-3 md:py-4 bg-emerald-600 hover:bg-emerald-500 text-white text-base md:text-lg font-bold rounded-xl transition-colors shadow-[0_0_20px_rgba(16,185,129,0.4)] mb-6">
                         🔗 Web Direct Download
                     </a>
+                    
+                    <!-- Video Player -->
+                    <div id="videoContainer" class="hidden w-full max-w-2xl mx-auto mt-4 rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl bg-black">
+                        <video id="videoPlayer" controls class="w-full aspect-video">
+                            Your browser does not support the video tag.
+                        </video>
+                    </div>
                 </div>
             </div>
 
@@ -382,6 +388,32 @@
 
         </div>
 
+        <!-- Community Feedback Section -->
+        <div class="mt-20 mb-16 text-left max-w-4xl mx-auto px-2">
+            <h2 class="text-2xl md:text-3xl font-bold mb-8 text-white text-center">Community Feedback</h2>
+            
+            <!-- Feedback Form -->
+            <div class="glass-card rounded-2xl p-6 mb-10">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <input type="text" id="fbName" placeholder="Your Name (Optional)" 
+                        class="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500">
+                </div>
+                <textarea id="fbMessage" placeholder="Write your feedback here..." rows="3"
+                    class="w-full bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 mb-4 resize-none"></textarea>
+                <button onclick="submitFeedback()" id="fbSubmitBtn"
+                    class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-8 rounded-xl transition-all flex items-center justify-center">
+                    <span>Submit Feedback</span>
+                    <div id="fbSpinner" class="spinner hidden ml-2"></div>
+                </button>
+            </div>
+
+            <!-- Feedback List -->
+            <div id="feedbackList" class="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                <!-- Feedbacks will be injected here -->
+                <p class="text-slate-500 text-center py-10">Loading feedbacks...</p>
+            </div>
+        </div>
+
         <div class="mt-16 text-slate-500 text-sm border-t border-slate-700/50 pt-8">
             &copy; 2026 AharBot. Hosted dynamically with Python & Aiohttp.
         </div>
@@ -416,6 +448,8 @@
         const resTitle = document.getElementById('resTitle');
         const resLink = document.getElementById('resLink');
         const dlBtn = document.getElementById('dlBtn');
+        const videoContainer = document.getElementById('videoContainer');
+        const videoPlayer = document.getElementById('videoPlayer');
 
         function resetUI() {
             errorBox.classList.add('hidden');
@@ -425,6 +459,8 @@
             resultBox.classList.add('hidden');
             resultBox.classList.remove('scale-100', 'opacity-100');
             vidThumb.classList.add('hidden');
+            videoContainer.classList.add('hidden');
+            videoPlayer.src = '';
             formatSelect.innerHTML = '<option value="best">Loading Formats...</option>';
         }
 
@@ -567,6 +603,14 @@
                     resTitle.innerText = data.title;
                     resLink.href = data.download_url;
 
+                    // Show Video Player if it was a video download
+                    if (currentMode === 'video') {
+                        videoPlayer.src = data.download_url;
+                        videoContainer.classList.remove('hidden');
+                    } else {
+                        videoContainer.classList.add('hidden');
+                    }
+
                     progressBox.classList.add('hidden');
                     resultBox.classList.remove('hidden');
                     setTimeout(() => resultBox.classList.add('scale-100', 'opacity-100'), 50);
@@ -584,6 +628,70 @@
                 showError("WebSocket Network Error occurred.");
             };
         }
+
+        // Feedback Logic
+        async function fetchFeedbacks() {
+            const feedbackList = document.getElementById('feedbackList');
+            try {
+                const response = await fetch('/api/feedbacks');
+                const feedbacks = await response.json();
+                
+                if (feedbacks.length === 0) {
+                    feedbackList.innerHTML = '<p class="text-slate-500 text-center py-10">No feedback yet. Be the first!</p>';
+                    return;
+                }
+
+                feedbackList.innerHTML = feedbacks.map(fb => `
+                    <div class="glass-card rounded-xl p-4 border-l-4 border-l-indigo-500 text-left">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="font-bold text-indigo-300 text-sm">${fb.name}</h4>
+                            <span class="text-[10px] text-slate-500">${fb.timestamp}</span>
+                        </div>
+                        <p class="text-slate-300 text-sm leading-relaxed">${fb.message}</p>
+                    </div>
+                `).join('');
+            } catch (err) {
+                if (feedbackList) feedbackList.innerHTML = '<p class="text-red-400 text-center py-10">Failed to load feedbacks.</p>';
+            }
+        }
+
+        async function submitFeedback() {
+            const nameInput = document.getElementById('fbName');
+            const msgInput = document.getElementById('fbMessage');
+            const submitBtn = document.getElementById('fbSubmitBtn');
+            const spinner = document.getElementById('fbSpinner');
+
+            const name = nameInput.value.trim() || "Anonymous";
+            const message = msgInput.value.trim();
+
+            if (!message) { alert("Please enter a message."); return; }
+
+            submitBtn.disabled = true;
+            spinner.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/api/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, message })
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    msgInput.value = "";
+                    await fetchFeedbacks();
+                } else {
+                    alert("Error: " + result.message);
+                }
+            } catch (err) {
+                alert("Failed to submit feedback.");
+            } finally {
+                submitBtn.disabled = false;
+                spinner.classList.add('hidden');
+            }
+        }
+
+        // Initialize on Load
+        document.addEventListener('DOMContentLoaded', fetchFeedbacks);
     </script>
 </body>
 

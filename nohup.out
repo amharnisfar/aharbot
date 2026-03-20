@@ -1,0 +1,59 @@
+WebSocket server settings:
+  - Listen on :6080
+  - Web server. Web root: /usr/share/novnc
+  - No SSL/TLS support (no cert file)
+  - proxying from :6080 to 0.0.0.0:5901
+20.207.204.164 - - [13/Mar/2026 06:02:28] 20.207.204.164: Plain non-SSL (ws://) WebSocket connection
+20.207.204.164 - - [13/Mar/2026 06:02:28] 20.207.204.164: Path: '/websockify'
+20.207.204.164 - - [13/Mar/2026 06:02:28] connecting to: 0.0.0.0:5901
+20.207.204.164 - - [13/Mar/2026 06:16:01] 20.207.204.164: Plain non-SSL (ws://) WebSocket connection
+20.207.204.164 - - [13/Mar/2026 06:16:01] 20.207.204.164: Path: '/websockify'
+20.207.204.164 - - [13/Mar/2026 06:16:01] connecting to: 0.0.0.0:5901
+20.207.204.164 - - [13/Mar/2026 09:04:23] 20.207.204.164: Plain non-SSL (ws://) WebSocket connection
+20.207.204.164 - - [13/Mar/2026 09:04:23] 20.207.204.164: Path: '/websockify'
+20.207.204.164 - - [13/Mar/2026 09:04:23] connecting to: 0.0.0.0:5901
+74.82.47.5 - - [13/Mar/2026 10:41:11] code 404, message File not found
+45.82.78.122: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+45.82.78.122: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+64.62.197.92: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+65.49.1.19 - - [14/Mar/2026 10:35:37] code 404, message File not found
+85.217.149.50: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+162.216.149.201 - - [15/Mar/2026 00:21:31] code 404, message File not found
+64.62.156.178 - - [15/Mar/2026 01:13:59] code 404, message File not found
+65.49.20.69: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+85.217.140.17 - - [15/Mar/2026 02:27:12] code 501, message Unsupported method ("'GET")
+20.207.204.164 - - [15/Mar/2026 15:51:43] 20.207.204.164: Plain non-SSL (ws://) WebSocket connection
+20.207.204.164 - - [15/Mar/2026 15:51:43] 20.207.204.164: Path: '/websockify'
+20.207.204.164 - - [15/Mar/2026 15:51:43] connecting to: 0.0.0.0:5901
+183.81.169.235 - - [15/Mar/2026 22:37:51] code 404, message File not found
+184.105.139.67: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+204.76.203.215 - - [16/Mar/2026 06:37:38] code 404, message File not found
+45.82.78.118: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+45.82.78.118: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+91.196.152.232: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+216.218.206.66 - - [16/Mar/2026 10:41:25] code 404, message File not found
+45.82.78.121: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+45.82.78.121: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+64.62.156.108: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+45.131.155.111 - - [17/Mar/2026 05:09:20] code 404, message File not found
+45.82.78.121: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+45.82.78.121: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+45.131.155.110 - - [17/Mar/2026 05:32:41] code 404, message File not found
+45.131.155.111 - - [17/Mar/2026 05:53:44] code 404, message File not found
+45.131.155.110 - - [17/Mar/2026 06:10:37] code 404, message File not found
+65.49.1.233 - - [17/Mar/2026 10:43:35] code 404, message File not found
+165.154.251.203 - - [17/Mar/2026 14:06:10] code 404, message File not found
+64.62.197.122: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+65.49.20.68 - - [18/Mar/2026 08:22:49] code 404, message File not found
+45.82.78.121: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+45.82.78.121: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+45.131.155.111 - - [18/Mar/2026 11:18:27] code 404, message File not found
+8.219.208.138: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+handler exception: [Errno 104] Connection reset by peer
+47.251.188.82 - - [18/Mar/2026 21:16:51] code 404, message File not found
+65.49.1.66 - - [19/Mar/2026 03:32:19] code 404, message File not found
+64.62.156.172: SSL connection but '/home/azureuser/aharbot/self.pem' not found
+80.94.95.169 - - [19/Mar/2026 10:58:53] code 404, message File not found
+45.131.155.111 - - [19/Mar/2026 12:46:02] code 404, message File not found
+184.105.247.195 - - [20/Mar/2026 01:12:02] code 404, message File not found
+65.49.20.66: SSL connection but '/home/azureuser/aharbot/self.pem' not found

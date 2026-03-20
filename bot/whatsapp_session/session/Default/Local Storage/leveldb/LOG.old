@@ -1,0 +1,9 @@
+2026/03/14-23:35:11.334 8e905 Reusing MANIFEST /home/azureuser/aharbot/bot/whatsapp_session/session/Default/Local Storage/leveldb/MANIFEST-000001
+2026/03/14-23:35:11.342 8e905 Recovering log #7
+2026/03/14-23:35:11.342 8e905 Reusing old log /home/azureuser/aharbot/bot/whatsapp_session/session/Default/Local Storage/leveldb/000007.log 
+2026/03/15-11:45:50.435 8e907 Level-0 table #11: started
+2026/03/15-11:45:50.442 8e907 Level-0 table #11: 12913 bytes OK
+2026/03/15-11:45:50.451 8e907 Delete type=0 #7
+2026/03/16-00:16:31.001 8e907 Level-0 table #13: started
+2026/03/16-00:16:31.013 8e907 Level-0 table #13: 11390 bytes OK
+2026/03/16-00:16:31.021 8e907 Delete type=0 #10

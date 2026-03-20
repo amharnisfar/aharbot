@@ -22,6 +22,7 @@ from asyncio import CancelledError
 import psutil
 import speedtest
 from ollama import Client as OllamaClient
+import aiohttp
 import aiohttp.web
 import string
 import random
@@ -48,9 +49,10 @@ BOT_TOKEN = "**********:**********************"
 # --- CHANNELS ---
 # Bot must be an admin in this channel for force-sub to work.
 FORCE_SUB_CHANNEL = "@aharbots"
-MEDIA_BACKUP_CHANNEL = -1003253205053
+MEDIA_BACKUP_CHANNEL = "-1003253205053"
 
 # --- PATHS & ENVIRONMENT ---
+WEB_DOMAIN = "aharbot.qzz.io"
 # Add Deno to PATH and set runtime for yt-dlp JS challenges
 DENO_BIN_DIR = "/home/azureuser/.deno/bin"
 if os.path.exists(DENO_BIN_DIR):
@@ -65,6 +67,7 @@ print("Bot configured to use the 500GB partition at /datadrive while downloading
 COOKIES_FILE = "/home/azureuser/aharbot/bot/cookies.txt"
 INSTAGRAM_COOKIES_FILE = "/home/azureuser/aharbot/bot/instagram_cookies.txt"
 USERS_FILE = "./users.txt"
+FEEDBACKS_FILE = "/home/azureuser/aharbot/bot/feedbacks.json"
 
 
 def get_total_users():
@@ -76,7 +79,171 @@ def get_total_users():
             return len(set(line.strip() for line in f if line.strip()))
     except Exception:
         return 0
+
+def log_user(user_id):
+    """Logs a unique user ID to users.txt for daily recommendations."""
+    if not user_id:
+        return
+    user_id_str = str(user_id)
+    known_users = set()
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r") as f:
+                known_users = set(line.strip() for line in f)
+        except Exception:
+            pass
+            
+    if user_id_str not in known_users:
+        try:
+            with open(USERS_FILE, "a") as f:
+                f.write(f"{user_id_str}\n")
+            print(f"[UserTrack] Logged new user: {user_id_str}")
+        except Exception as e:
+            print(f"[UserTrack] Error logging user: {e}")
+
+async def get_random_music_recommendation():
+    """Fetches a random high-quality music video from YouTube."""
+    queries = [
+        "latest hit songs 2024", "top music videos today", "popular pop songs",
+        "billboard hot 100", "trending music videos", "best random songs",
+        "must watch music video", "amazing music video", "lofi hip hop mix",
+        "official music video 2024", "new releases music", "vibe songs"
+    ]
+    query = random.choice(queries)
+    print(f"[DailyMusic] Searching for: {query}")
+    
+    ydl_opts = {
+        'format': 'best',
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Search for 15 results and pick one randomly
+            result = ydl.extract_info(f"ytsearch15:{query}", download=False)
+            if 'entries' in result and result['entries']:
+                entry = random.choice(result['entries'])
+                return {
+                    "title": entry.get('title'),
+                    "url": f"https://www.youtube.com/watch?v={entry.get('id')}",
+                    "uploader": entry.get('uploader')
+                }
+    except Exception as e:
+        print(f"[DailyMusic] Search error: {e}")
+    return None
+
+async def daily_recommendation_loop(client):
+    """Backgound task to send daily music recommendations to all users."""
+    print("[DailyMusic] Starting background recommendation loop...")
+    while True:
+        try:
+            # Wait for 24 hours
+            # For testing/initial start, we can wait a bit or send immediately if first time
+            curr_hour = time.localtime().tm_hour
+            # Target hour: 10 AM (arbitrary)
+            if curr_hour == 10:
+                music = await get_random_music_recommendation()
+                if music:
+                    users = []
+                    if os.path.exists(USERS_FILE):
+                        with open(USERS_FILE, "r") as f:
+                            users = [line.strip() for line in f if line.strip()]
+                    
+                    print(f"[DailyMusic] Sending '{music['title']}' to {len(users)} users.")
+                    msg_text = (
+                        "🌟 **Daily Music Recommendation** 🌟\n\n"
+                        f"🎵 **{music['title']}**\n"
+                        f"👤 By: {music['uploader'] or 'YouTube'}\n\n"
+                        f"🔗 {music['url']}\n\n"
+                        "💡 *Tip: Just click the link and I'll help you download it if you want!*"
+                    )
+                    
+                    for user_id in users:
+                        try:
+                            await client.send_message(chat_id=int(user_id), text=msg_text)
+                            await asyncio.sleep(0.1) # Flood prevention
+                        except Exception as e:
+                            print(f"[DailyMusic] Failed to send to {user_id}: {e}")
+                
+            # Sleep for 1 hour before checking again
+            await asyncio.sleep(3600)
+        except Exception as e:
+            print(f"[DailyMusic] Loop error: {e}")
+            await asyncio.sleep(60)
 WHATSAPP_BRIDGE_URL = "http://localhost:3000/send"
+SUBSCRIPTIONS_FILE = "/home/azureuser/aharbot/bot/subscriptions.json"
+
+def load_subscriptions():
+    if not os.path.exists(SUBSCRIPTIONS_FILE):
+        return {}
+    try:
+        with open(SUBSCRIPTIONS_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_subscriptions(subs):
+    try:
+        with open(SUBSCRIPTIONS_FILE, "w") as f:
+            json.dump(subs, f, indent=4)
+    except Exception as e:
+        print(f"Error saving subscriptions: {e}")
+
+def subscribe_channel(user_id, channel_id, channel_name, channel_url, last_video_id=None):
+    subs = load_subscriptions()
+    if channel_id not in subs:
+        subs[channel_id] = {
+            "name": channel_name,
+            "url": channel_url,
+            "subscribers": [],
+            "last_video_id": last_video_id
+        }
+    if user_id not in subs[channel_id]["subscribers"]:
+        subs[channel_id]["subscribers"].append(user_id)
+    save_subscriptions(subs)
+
+def unsubscribe_channel(user_id, channel_id):
+    subs = load_subscriptions()
+    if channel_id in subs:
+        if user_id in subs[channel_id]["subscribers"]:
+            subs[channel_id]["subscribers"].remove(user_id)
+        if not subs[channel_id]["subscribers"]:
+            del subs[channel_id]
+    save_subscriptions(subs)
+
+def get_user_subscriptions(user_id):
+    subs = load_subscriptions()
+    user_subs = []
+    for cid, data in subs.items():
+        if user_id in data["subscribers"]:
+            user_subs.append({"id": cid, "name": data["name"], "url": data["url"]})
+    return user_subs
+
+async def forward_to_backup(client, message, caption=None):
+    """
+    Robust forwarding to the backup channel.
+    Handles PeerIdInvalid and ChatWriteForbidden by trying to resolve the peer.
+    """
+    if not MEDIA_BACKUP_CHANNEL:
+        return None
+    try:
+        # Prefer copy() as it doesn't show 'Forwarded from'
+        return await message.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=caption or message.caption)
+    except Exception as e:
+        err_msg = str(e)
+        if any(x in err_msg for x in ["PeerIdInvalid", "ChatWriteForbidden", "CHAT_ADMIN_REQUIRED", "400 CHAT_ID_INVALID"]):
+            try:
+                # Try to resolve peer if bot doesn't "know" the chat yet
+                chat = await client.get_chat(MEDIA_BACKUP_CHANNEL)
+                print(f"[forward_to_backup] Peer resolved: {chat.title} ({chat.id})", flush=True)
+                return await message.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=caption or message.caption)
+            except Exception as e2:
+                print(f"[forward_to_backup] Fatal forwarding error for ID {MEDIA_BACKUP_CHANNEL}: {e2}", flush=True)
+        else:
+            print(f"[forward_to_backup] Forwarding error: {e}", flush=True)
+    return None
 # --- YT-DLP CONFIGURATION & HELPERS ---
 class DownloadCancelled(Exception):
     """Custom exception raised when a user cancels a download."""
@@ -306,7 +473,16 @@ SEARCH_SESSIONS = {}  # user_id -> { results: list, page: int }
 AI_CONVERSATIONS = {}  # user_id -> list of message dicts
 
 # --- Ollama AI Client ---
-OLLAMA_API_KEY = "yourtokenstringhere*************"
+OLLAMA_API_KEY_FILE = "/home/azureuser/aharbot/bot/ollama_api.txt"
+OLLAMA_API_KEY = "REDACTED_OLLAMA_KEY"
+
+if os.path.exists(OLLAMA_API_KEY_FILE):
+    try:
+        with open(OLLAMA_API_KEY_FILE, "r") as f:
+            OLLAMA_API_KEY = f.read().strip()
+    except Exception:
+        pass
+
 ollama_client = OllamaClient(
     host="https://ollama.com",
     headers={'Authorization': 'Bearer ' + OLLAMA_API_KEY}
@@ -349,10 +525,12 @@ app = Client(
     "Ahar_All_In_One_Bot",
     api_id=API_ID,
     api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-    in_memory=True
+    bot_token=BOT_TOKEN
 )
 
+
+# Session tracking for channel subscriptions
+SUB_SESSIONS = {}
 
 # -------- Progress Helpers --------
 def humanbytes(size):
@@ -416,7 +594,48 @@ async def check_membership(client: Client, message: Message) -> bool:
         return False
 
 
-# -------- 2) Upload file helper (supports all file types) --------
+# -------- 2) Cleanup helper (prevents deleting active links) --------
+def safe_remove_dir(directory):
+    """
+    Safely removes a directory and its contents, BUT skips any file 
+    that is currently an active web direct download link.
+    """
+    if not directory or not os.path.exists(directory):
+        return
+        
+    try:
+        # Get all paths currently in ACTIVE_LINKS
+        active_paths = {data['path'] for data in ACTIVE_LINKS.values()}
+        
+        # Traverse from bottom-up to remove files then empty dirs
+        for root, dirs, files in os.walk(directory, topdown=False):
+            for name in files:
+                file_path = os.path.join(root, name)
+                if file_path in active_paths:
+                    # print(f"[DEBUG] safe_remove_dir: Skipping active link {file_path}")
+                    continue
+                try:
+                    os.remove(file_path)
+                except Exception:
+                    pass
+            
+            for name in dirs:
+                dir_path = os.path.join(root, name)
+                try:
+                    # Only remove if directory is now empty
+                    if not os.listdir(dir_path):
+                        os.rmdir(dir_path)
+                except Exception:
+                    pass
+        
+        # Finally try to remove the top directory if it's empty
+        if os.path.exists(directory) and not os.listdir(directory):
+            shutil.rmtree(directory, ignore_errors=True)
+            
+    except Exception as e:
+        print(f"[safe_remove_dir] Error: {e}")
+
+# -------- 3) Upload file helper (supports all file types) --------
 def _detect_file_type(file_path: str) -> str:
     """Detect whether a file is video, audio, photo, or generic document."""
     mime, _ = mimetypes.guess_type(file_path)
@@ -439,6 +658,42 @@ def _detect_file_type(file_path: str) -> str:
     if ext in photo_exts:
         return "photo"
     return "document"
+
+
+def _get_video_thumbnail(video_path):
+    """Extract a frame from the video at 1 second to use as a thumbnail."""
+    if not os.path.exists(video_path):
+        return None
+    
+    thumb_path = video_path + "_auto_thumb.jpg"
+    try:
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return None
+        
+        # Try to grab frame at 1 second mark
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(fps))
+        
+        success, frame = cap.read()
+        if success:
+            # Resize if too large for Telegram (max 320x320 usually works best for thumbs)
+            h, w = frame.shape[:2]
+            max_size = 320
+            if max(h, w) > max_size:
+                scale = max_size / max(h, w)
+                frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
+            
+            cv2.imwrite(thumb_path, frame)
+            cap.release()
+            return thumb_path
+        
+        cap.release()
+    except Exception as e:
+        print(f"[_get_video_thumbnail] Error: {e}")
+    
+    return None
 
 
 async def upload_file(client: Client, message: Message, chat_id: int, file_path: str, caption: str = "", thumb_path: str = None, duration: int = 0, width: int = 0, height: int = 0, url: str = ""):
@@ -493,6 +748,11 @@ async def upload_file(client: Client, message: Message, chat_id: int, file_path:
                 last_update_time = now
 
     thumb = thumb_path if (thumb_path and os.path.exists(thumb_path)) else None
+    
+    # Auto-generate thumbnail for videos if missing
+    if file_type == "video" and not thumb:
+        await status_message.edit_text(f"Generating thumbnail...")
+        thumb = await asyncio.to_thread(_get_video_thumbnail, file_path)
     sent_msg = None
 
     try:
@@ -538,17 +798,14 @@ async def upload_file(client: Client, message: Message, chat_id: int, file_path:
                 progress=progress
             )
 
-        try:
-            if sent_msg and MEDIA_BACKUP_CHANNEL:
-                await sent_msg.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=final_caption)
-        except Exception as e:
-            print(f"[upload_file] Forwarding error: {e}")
+        # Robust forwarding using helper
+        await forward_to_backup(app, sent_msg, caption=final_caption)
  
         try:
             file_hash = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
             # Active link expires in 3 hours
             ACTIVE_LINKS[file_hash] = {'path': file_path, 'expiry': time.time() + 10800, 'name': os.path.basename(file_path)}
-            dl_url = f"https://aharbot.qzz.io/dl/{file_hash}"
+            dl_url = f"https://{WEB_DOMAIN}/dl/{file_hash}"
             link_button = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Web Direct Download (Valid 3h)", url=dl_url)]])
             await sent_msg.edit_reply_markup(reply_markup=link_button)
         except: pass
@@ -716,11 +973,12 @@ async def backup_command(client, message):
         if os.path.exists(backup_path):
             size = os.path.getsize(backup_path)
             await status_msg.edit_text(f"📦 **Backup ready!** ({format_bytes(size)})\nUploading...")
-            await client.send_document(
+            sent_msg = await client.send_document(
                 chat_id=message.chat.id,
                 document=backup_path,
                 caption=f"🗂 **Ahar Bot Backup**\n📅 {time.strftime('%Y-%m-%d %H:%M:%S')}\n📦 Size: {format_bytes(size)}"
             )
+            await forward_to_backup(client, sent_msg)
             await status_msg.edit_text("✅ **Backup sent!**")
             os.remove(backup_path)
         else:
@@ -875,18 +1133,207 @@ async def whatsapp_command(client, message):
 
 
 # -------- 3) Commands --------
+async def extract_transcript(url):
+    """Try to extract plain text transcript from a YouTube video using yt-dlp"""
+    try:
+        temp_dir = f"/tmp/transcript_{int(time.time())}"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # We only want the subtitles, skip the video
+        cmd = [
+            "yt-dlp",
+            "--write-auto-sub",
+            "--sub-lang", "en.*",
+            "--convert-subs", "srt",
+            "--skip-download",
+            "-o", f"{temp_dir}/%(id)s.%(ext)s",
+            url
+        ]
+        
+        process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        await process.communicate()
+        
+        # Look for the .srt file
+        srt_file = None
+        for f in os.listdir(temp_dir):
+            if f.endswith(".srt"):
+                srt_file = os.path.join(temp_dir, f)
+                break
+        
+        if not srt_file:
+            return None
+            
+        with open(srt_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Basic SRT cleaning (remove timestamps and indices)
+        import re
+        lines = []
+        for line in content.split('\n'):
+            if not line.strip() or line.strip().isdigit() or "-->" in line:
+                continue
+            lines.append(line.strip())
+            
+        # Limit text size to avoid overloading AI context
+        text = " ".join(lines)
+        return text
+    except Exception as e:
+        print(f"Error cleaning transcript: {e}")
+        return None
+
+async def search_lens(image_path):
+    """
+    Improved Google Lens search by image URL.
+    Hosts the image on aharbot.qzz.io/static/ and passes the URL to Lens.
+    """
+    found_results = []
+    
+    # 1. Host the file temporarily
+    import shutil
+    import uuid
+    filename = f"lens_{uuid.uuid4().hex}.png"
+    public_path = os.path.join("/home/azureuser/aharbot/web/static", filename)
+    public_url = f"https://aharbot.qzz.io/static/{filename}"
+    
+    try:
+        shutil.copy2(image_path, public_path)
+    except Exception as e:
+        print(f"Error hosting file: {e}")
+        return []
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Encoding": "gzip, deflate",
+    }
+    
+    # URL-encoded image search with specific parameters to trigger results
+    from urllib.parse import quote
+    search_url = f"https://lens.google.com/uploadbyurl?url={quote(public_url)}&ep=sub_nm&re=df&st=1773987238557&vpw=1200&vph=800"
+    
+    try:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(search_url, allow_redirects=True) as response:
+                if response.status != 200:
+                    if os.path.exists(public_path): os.remove(public_path)
+                    return []
+                
+                html = await response.text()
+                
+                # Broad Social Media Regex Patterns
+                patterns = {
+                    "YouTube": r'https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[a-zA-Z0-9_-]+',
+                    "Facebook": r'https?://(?:www\.)?(?:facebook\.com/|fb\.watch/)[a-zA-Z0-9_\-\./]+',
+                    "Instagram": r'https?://(?:www\.)?instagram\.com/(?:reels?|p|stories)/[a-zA-Z0-9_-]+',
+                    "TikTok": r'https?://(?:www\.)?(?:tiktok\.com/@[a-zA-Z0-9_\.]+/video/\d+|vm\.tiktok\.com/[a-zA-Z0-9_-]+)',
+                    "Twitter/X": r'https?://(?:www\.)?(?:twitter\.com|x\.com)/[a-zA-Z0-9_]+/status/\d+'
+                }
+                
+                seen_urls = set()
+                # 1. Regex attempt
+                for platform, pattern in patterns.items():
+                    links = re.findall(pattern, html)
+                    for url in links:
+                        url = url.split('"')[0].split("'")[0].split('\\')[0]
+                        if url not in seen_urls:
+                            title = f"{platform} Content"
+                            escaped_url = re.escape(url)
+                            title_match = re.search(r'"([^"]{5,80})"[^"]*' + escaped_url, html)
+                            if title_match:
+                                title = title_match.group(1)
+                            
+                            found_results.append({"title": title, "url": url})
+                            seen_urls.add(url)
+
+                # 2. Playwright Fallback (for dynamic JS content)
+                if not found_results:
+                    from playwright.async_api import async_playwright
+                    async with async_playwright() as p:
+                        browser = await p.chromium.launch(headless=True)
+                        context = await browser.new_context(user_agent=headers["User-Agent"])
+                        page = await context.new_page()
+                        await page.goto(search_url)
+                        
+                        # Try to click "Visual matches" to ensure high-quality links are visible
+                        try:
+                            await page.click("text='Visual matches'", timeout=5000)
+                        except:
+                            pass
+                        
+                        try:
+                            # Wait for results to render
+                            await page.wait_for_selector("a[data-ved]", timeout=8000)
+                        except:
+                            pass
+                        
+                        matches = await page.query_selector_all("a[data-ved]")
+                        for m in matches:
+                            href = await m.get_attribute("href")
+                            if href:
+                                for platform, pattern in patterns.items():
+                                    if re.search(pattern, href):
+                                        if href not in seen_urls:
+                                            title = f"{platform} Link"
+                                            title_elem = await m.query_selector("[role='heading'], .UB70fc, .UA99S")
+                                            if title_elem:
+                                                title = await title_elem.inner_text()
+                                            found_results.append({"title": title, "url": href})
+                                            seen_urls.add(href)
+                        await browser.close()
+    
+    except Exception as e:
+        print(f"Lens Error: {e}")
+    finally:
+        if os.path.exists(public_path):
+            os.remove(public_path)
+            
+    return found_results
+
+
+# --- Command Handlers ---
+
+@app.on_message(filters.photo)
+async def handle_photo(client, message):
+    wait = await message.reply("🔍 **Image detected!** Searching Google Lens for related social media videos... 🕵️‍♂️")
+    
+    try:
+        # Download photo
+        photo_path = await message.download()
+        
+        # Search Lens
+        results = await search_lens(photo_path)
+        
+        # Cleanup
+        if os.path.exists(photo_path):
+            os.remove(photo_path)
+            
+        if not results:
+            return await wait.edit("❌ **No related social media videos found via Google Lens.**")
+            
+        # Create buttons with actual titles
+        buttons = []
+        for res in results:
+            title = res['title']
+            url = res['url']
+            # Truncate title if too long for a button
+            display_title = (title[:30] + '...') if len(title) > 33 else title
+            buttons.append([InlineKeyboardButton(f"🔗 {display_title}", url=url)])
+        
+        await wait.edit(
+            f"✅ **Found results from Google Lens!**\n\n_Powered by Ahar AI_",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    except Exception as e:
+        await wait.edit(f"❌ **Error during search:** {e}")
+
+@app.on_message(filters.command("lens"))
+async def lens_cmd(client, message):
+    await message.reply("📸 **Send me any photo**, and I will use Google Lens to find related YouTube videos for you!")
+
+
 @app.on_message(filters.command("start"))
 async def start_command(client, message):
-    # Track user ID for broadcasts
-    user_id = str(message.from_user.id)
-    known_users = set()
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r") as f:
-            known_users = set(line.strip() for line in f)
-            
-    if user_id not in known_users:
-        with open(USERS_FILE, "a") as f:
-            f.write(f"{user_id}\n")
+    # Track user ID for broadcasts and daily recommendations
+    log_user(message.from_user.id)
 
     if await check_membership(client, message):
         await message.reply_text(
@@ -955,6 +1402,197 @@ async def help_command(client, message):
 @app.on_message(filters.command("ping"))
 async def ping_command(_, message):
     await message.reply_text("🏓 Pong!", quote=True)
+
+
+# --- YouTube Subscriptions ---
+
+@app.on_message(filters.command("subscribe"))
+async def subscribe_cmd(client, message):
+    if len(message.command) < 2:
+        return await message.reply_text("❌ Please provide a YouTube channel URL.\nUsage: `/subscribe <url>`")
+    
+    url = message.text.split(None, 1)[1]
+    status_msg = await message.reply_text("🔍 Validating channel...")
+    
+    try:
+        # Get channel info via yt-dlp
+        opts = get_base_ydl_opts(download=False)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False, process=False)
+            if not info or 'entries' in info: # It's a playlist or something else
+                # Try to process it to get the channel if it's a video link
+                info = ydl.extract_info(url, download=False)
+            
+            channel_id = info.get('channel_id') or info.get('id')
+            channel_name = info.get('channel') or info.get('uploader') or info.get('title')
+            channel_url = info.get('channel_url') or f"https://www.youtube.com/channel/{channel_id}"
+            
+            if not channel_id or "youtube.com" not in channel_url:
+                return await status_msg.edit("❌ Could not identify a valid YouTube channel from that link.")
+            
+            # Get latest video ID to start tracking from now
+            latest_video_opts = opts.copy()
+            latest_video_opts.update({'playlist_items': '1', 'quiet': True})
+            with yt_dlp.YoutubeDL(latest_video_opts) as ydl_latest:
+                latest_info = ydl_latest.extract_info(channel_url, download=False)
+                last_vid = None
+                if 'entries' in latest_info and latest_info['entries']:
+                    last_vid = latest_info['entries'][0].get('id')
+            
+            subscribe_channel(message.from_user.id, channel_id, channel_name, channel_url, last_vid)
+            await status_msg.edit(f"✅ Successfully subscribed to **{channel_name}**!\nYou will be notified when new videos are uploaded.")
+            
+    except Exception as e:
+        print(f"[subscribe] Error: {e}")
+        await status_msg.edit(f"❌ Error subscribing: {str(e)[:100]}")
+
+@app.on_message(filters.command("unsubscribe"))
+async def unsubscribe_cmd(client, message):
+    user_subs = get_user_subscriptions(message.from_user.id)
+    if not user_subs:
+        return await message.reply_text("❌ You don't have any active subscriptions.")
+    
+    if len(message.command) < 2:
+        # Show list with buttons to unsubscribe
+        buttons = []
+        for sub in user_subs:
+            buttons.append([InlineKeyboardButton(f"❌ Unsub: {sub['name']}", callback_data=f"unsub_{sub['id']}")])
+        
+        return await message.reply_text("Your subscriptions:", reply_markup=InlineKeyboardMarkup(buttons))
+
+    # If they provided a URL or ID directly
+    query = message.text.split(None, 1)[1]
+    # Simple search in their subs
+    target = None
+    for sub in user_subs:
+        if query in sub['url'] or query in sub['id'] or query.lower() in sub['name'].lower():
+            target = sub
+            break
+    
+    if target:
+        unsubscribe_channel(message.from_user.id, target['id'])
+        await message.reply_text(f"✅ Unsubscribed from **{target['name']}**.")
+    else:
+        await message.reply_text("❌ Could not find that channel in your subscriptions.")
+
+@app.on_message(filters.command("channels"))
+async def list_channels_cmd(client, message):
+    user_subs = get_user_subscriptions(message.from_user.id)
+    if not user_subs:
+        return await message.reply_text("📂 You have no active YouTube subscriptions.\nUse `/search_channel <query>` or `/subscribe <url>` to add some!")
+    
+    text = "📂 **Your YouTube Subscriptions:**\n\n"
+    for i, sub in enumerate(user_subs, 1):
+        text += f"{i}. [{sub['name']}]({sub['url']})\n"
+    
+    await message.reply_text(text, disable_web_page_preview=True)
+
+@app.on_message(filters.command("search_channel"))
+async def search_channel_cmd(client, message):
+    if len(message.command) < 2:
+        return await message.reply_text("🔍 Please provide a search query.\nUsage: `/search_channel <query>`")
+    
+    query = message.text.split(None, 1)[1]
+    status_msg = await message.reply_text(f"🔍 Searching YouTube for channels matching '{query}'...")
+    
+    try:
+        # Optimization: use extract_flat=True for much faster results
+        ydl_opts = get_base_ydl_opts(download=False, custom_opts={'extract_flat': True})
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Search for more items to increase chance of finding channels
+            search_results = ydl.extract_info(f"ytsearch15:{query}", download=False)
+            
+            channels = {} # id -> {name, url}
+            if 'entries' in search_results:
+                for entry in search_results['entries']:
+                    if entry:
+                        c_id = entry.get('channel_id')
+                        c_name = entry.get('uploader') or entry.get('channel')
+                        c_url = entry.get('channel_url')
+                        
+                        # Some entries might not be channels directly, but we can get channel info from videos
+                        if c_id and c_name and c_url:
+                            if c_id not in channels:
+                                channels[c_id] = {"name": c_name, "url": c_url}
+            
+            if not channels:
+                return await status_msg.edit("❌ No channels found for that query.")
+            
+            buttons = []
+            # Sort channels by name to be consistent
+            sorted_channels = sorted(channels.items(), key=lambda x: x[1]['name'])[:8] # Limit to 8 for UI
+            
+            for c_id, data in sorted_channels:
+                buttons.append([InlineKeyboardButton(f"🔔 Sub: {data['name']}", callback_data=f"sub_{c_id}")])
+            
+            await status_msg.edit(f"🔍 **Channels found for '{query}':**", reply_markup=InlineKeyboardMarkup(buttons))
+            
+            # Cache the channel names/urls for the callbacks in SUB_SESSIONS
+            global SUB_SESSIONS
+            if message.from_user.id not in SUB_SESSIONS:
+                SUB_SESSIONS[message.from_user.id] = {}
+            SUB_SESSIONS[message.from_user.id]['temp_channels'] = channels
+            print(f"[search_channel] Cached {len(channels)} channels in SUB_SESSIONS for user {message.from_user.id}")
+
+    except Exception as e:
+        print(f"[search_channel] Error: {e}")
+        traceback.print_exc()
+        await status_msg.edit(f"❌ Error searching: {str(e)[:100]}")
+
+async def check_subscriptions_loop(client):
+    """Background task to check for new videos every 12 hours."""
+    print("[Subs] Starting background check loop...")
+    while True:
+        try:
+            subs = load_subscriptions()
+            if not subs:
+                await asyncio.sleep(3600) # Check every hour if any subs exist yet
+                continue
+                
+            print(f"[Subs] Checking {len(subs)} channels for updates...")
+            ydl_opts = get_base_ydl_opts(download=False)
+            ydl_opts.update({'playlist_items': '1', 'quiet': True, 'no_warnings': True})
+            
+            for c_id, data in subs.items():
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info = ydl.extract_info(data['url'], download=False)
+                        if 'entries' in info and info['entries']:
+                            latest_vid = info['entries'][0]
+                            vid_id = latest_vid.get('id')
+                            vid_title = latest_vid.get('title')
+                            
+                            if vid_id and vid_id != data.get('last_video_id'):
+                                # NEW VIDEO!
+                                print(f"[Subs] New video on {data['name']}: {vid_title}")
+                                # Notify all subscribers
+                                notify_text = (
+                                    f"🔔 **New Video from {data['name']}!**\n\n"
+                                    f"🎬 **{vid_title}**\n"
+                                    f"🔗 https://www.youtube.com/watch?v={vid_id}"
+                                )
+                                
+                                for user_id in data['subscribers']:
+                                    try:
+                                        await client.send_message(user_id, notify_text)
+                                        await asyncio.sleep(0.5) # Flood wait avoid
+                                    except:
+                                        pass # User might have blocked bot
+                                
+                                # Update last video ID
+                                subs[c_id]['last_video_id'] = vid_id
+                                save_subscriptions(subs)
+                except Exception as e:
+                    print(f"[Subs] Error checking channel {data['name']}: {e}")
+                
+                await asyncio.sleep(5) # Delay between channels
+
+            # Sleep for 12 hours
+            await asyncio.sleep(12 * 3600)
+            
+        except Exception as e:
+            print(f"[Subs] Loop error: {e}")
+            await asyncio.sleep(600)
 
 
 @app.on_message(filters.command("stats"))
@@ -1123,13 +1761,47 @@ async def playlist_command(client, message):
                             break
 
                 if file_path and os.path.exists(file_path):
+                    # Thumbnail resolution for playlist video
+                    base = os.path.splitext(file_path)[0]
+                    thumb_url = entry.get('thumbnail')
+                    thumb_path_to_clean = None
+                    final_thumb_path = None
+                    
+                    for ext in ("webp", "jpg", "jpeg", "png"):
+                        p = f"{base}.{ext}"
+                        if os.path.exists(p):
+                            thumb_path_to_clean = p
+                            break
+                    
+                    if not thumb_path_to_clean and thumb_url:
+                        try:
+                            temp_thumb = base + "_playlist_thumb"
+                            resp = requests.get(thumb_url, timeout=10)
+                            if resp.status_code == 200:
+                                with open(temp_thumb, "wb") as f:
+                                    f.write(resp.content)
+                                thumb_path_to_clean = temp_thumb
+                        except: pass
+
+                    if thumb_path_to_clean:
+                        final_thumb_path = base + "_thumb.jpg"
+                        def _proc_pthumb():
+                            try:
+                                with Image.open(thumb_path_to_clean) as img:
+                                    img.convert("RGB").save(final_thumb_path, "jpeg")
+                            except: pass
+                        await asyncio.to_thread(_proc_pthumb)
+                        if thumb_path_to_clean != final_thumb_path:
+                            try: os.remove(thumb_path_to_clean)
+                            except: pass
+
                     # Upload the video
                     await status_msg.edit_text(
                         f"📋 **{playlist_title}**\n\n"
                         f"⬆️ Uploading **{i}/{total_videos}**: `{video_title}`\n"
                         f"✅ Success: {success_count} | ❌ Failed: {fail_count}"
                     )
-                    await upload_file(client, message, message.chat.id, file_path, caption=f"**Playlist:** {playlist_title}\n\n**Video:** `{video_title}`", url=video_url)
+                    await upload_file(client, message, message.chat.id, file_path, caption=f"**Playlist:** {playlist_title}\n\n**Video:** `{video_title}`", thumb_path=final_thumb_path, url=video_url)
                     success_count += 1
                 else:
                     fail_count += 1
@@ -1164,7 +1836,7 @@ async def playlist_command(client, message):
     finally:
         ACTIVE_DOWNLOADS.pop(user_id, None)
         if download_dir and os.path.exists(download_dir):
-            shutil.rmtree(download_dir)
+            safe_remove_dir(download_dir)
 
 
 async def render_search_page(client, message, user_id, page=0):
@@ -1496,7 +2168,7 @@ async def torrent_handler(client, message):
                 ses.remove_torrent(h)
         # This block ensures the downloaded files are always deleted.
         if os.path.exists(download_path):
-            shutil.rmtree(download_path, ignore_errors=True)
+            safe_remove_dir(download_path)
         if link_type == "file" and source and os.path.exists(source):
             os.remove(source)
 
@@ -1750,7 +2422,9 @@ async def _process_social_media_url(client, message, url):
         if not formats or len(formats) <= 1:
             row3.append(InlineKeyboardButton("⚡ Quick Download (Best)", callback_data=f"yt_quick_{user_id}"))
 
-        button_rows = [row1, row2]
+        row_ai = [InlineKeyboardButton("✨ AI Summarize", callback_data=f"yt_summarize_{user_id}")]
+
+        button_rows = [row1, row2, row_ai]
         if row3:
             button_rows.append(row3)
         buttons = InlineKeyboardMarkup(button_rows)
@@ -1910,8 +2584,8 @@ async def insta_command(client, message):
                 photo=pic_path,
                 caption=text
             )
-            if sent_msg and MEDIA_BACKUP_CHANNEL:
-                await sent_msg.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=text)
+            if sent_msg:
+                await forward_to_backup(client, sent_msg, caption=text)
             await status_msg.delete()
             os.remove(pic_path)
         except Exception:
@@ -1927,6 +2601,138 @@ async def insta_command(client, message):
             await status_msg.edit_text(f"❌ User `@{username}` not found on Instagram.")
         else:
             await status_msg.edit_text(f"❌ **Instagram Error:** `{e}`")
+
+
+@app.on_message(filters.command("addapi"))
+async def addapi_command(client, message):
+    if message.from_user.id != 7962617461:
+        await message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    if len(message.command) < 2:
+        await message.reply_text("Usage: `/addapi <new_ollama_api_key>`")
+        return
+
+    new_key = message.command[1].strip()
+    global OLLAMA_API_KEY, ollama_client
+    OLLAMA_API_KEY = new_key
+    
+    try:
+        with open(OLLAMA_API_KEY_FILE, "w") as f:
+            f.write(new_key)
+        
+        # Re-initialize client
+        ollama_client = OllamaClient(
+            host="https://ollama.com",
+            headers={'Authorization': 'Bearer ' + OLLAMA_API_KEY}
+        )
+        await message.reply_text("✅ **Ollama API Key updated and saved!**")
+    except Exception as e:
+        await message.reply_text(f"❌ Error saving API key: `{e}`")
+
+
+async def get_video_summary(url):
+    """Fetches transcripts or description and summarizes using AI"""
+    try:
+        ydl_opts = {
+            'skip_download': True,
+            'cookiefile': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,
+            'writesubtitles': True,
+            'writeautomaticsub': True,
+            'subtitleslangs': ['en'],
+            'quiet': True,
+            'no_warnings': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+        title = info.get('title', 'Unknown Video')
+        description = info.get('description', '')
+        
+        # Try to extract transcript/captions
+        transcript_text = ""
+        try:
+            subtitles = info.get('subtitles', {}) or {}
+            auto_caps = info.get('automatic_captions', {}) or {}
+            all_subs = {**auto_caps, **subtitles}
+            
+            en_subs = None
+            for lang in ['en', 'en-US', 'en-GB']:
+                if lang in all_subs:
+                    en_subs = all_subs[lang]
+                    break
+            
+            if en_subs:
+                # Prefer json3 format for easy parsing
+                json_url = next((f['url'] for f in en_subs if f.get('ext') == 'json3'), None)
+                if not json_url:
+                    json_url = next((f['url'] for f in en_subs if 'json' in f.get('ext', '')), None)
+                
+                if json_url:
+                    import requests as req
+                    def fetch_json():
+                        r = req.get(json_url, timeout=10)
+                        return r.json() if r.status_code == 200 else None
+                        
+                    resp_data = await asyncio.to_thread(fetch_json)
+                    if resp_data and 'events' in resp_data:
+                        segments = []
+                        for event in resp_data['events']:
+                            if 'segs' in event:
+                                seg_text = "".join(seg.get('utf8', '') for seg in event['segs'])
+                                segments.append(seg_text)
+                        transcript_text = " ".join(segments).replace('\n', ' ').strip()
+        except Exception as te:
+            print(f"[AI-SUM] Transcript extraction error: {te}")
+
+        # Choose context: transcript is preferred, description is fallback
+        if transcript_text and len(transcript_text) > 100:
+            context_text = f"Title: {title}\n\nTranscript (First 6000 chars):\n{transcript_text[:6000]}"
+        else:
+            context_text = f"Title: {title}\n\nDescription:\n{description[:2000]}"
+        
+        prompt = (
+            f"Please summarize the following video details into a clear, "
+            f"concise bullet-point summary for a Telegram user. Include key takeaways.\n\n"
+            f"{context_text}"
+        )
+        
+        def call_ollama():
+            return ollama_client.chat(
+                model=AI_MODEL,
+                messages=[{'role': 'user', 'content': prompt}]
+            )
+            
+        response = await asyncio.to_thread(call_ollama)
+        return response['message']['content']
+    except Exception as e:
+        return f"Error during summarization: {str(e)}"
+
+
+@app.on_callback_query(filters.regex(r"^yt_summarize_"))
+async def yt_summarize_callback(client, callback_query):
+    user_id = callback_query.from_user.id
+    if callback_query.data != f"yt_summarize_{user_id}":
+        await callback_query.answer("This is not your session.", show_alert=True)
+        return
+
+    session = YT_SESSIONS.get(user_id)
+    if not session:
+        await callback_query.answer("Session expired. Please send /dl again.", show_alert=True)
+        return
+
+    await callback_query.answer("Summarizing video with AI... Please wait.")
+    status_msg = await callback_query.message.reply_text("✨ **AI is analyzing the video...**\nThis may take a moment.")
+    
+    summary = await get_video_summary(session['url'])
+    
+    await status_msg.edit_text(
+        f"📊 **AI Video Summary**\n\n{summary}\n\n_Powered by Ahar AI_",
+        disable_web_page_preview=True
+    )
+
+
+# ---- YouTube Handlers ----
 
 
 # ---- YouTube: Video quality selection ----
@@ -1976,7 +2782,10 @@ async def yt_video_callback(client, callback_query):
     )
 
 
-# ---- YouTube: Audio format selection ----
+
+
+
+
 @app.on_callback_query(filters.regex(r"^yt_audio_"))
 async def yt_audio_callback(client, callback_query):
     user_id = callback_query.from_user.id
@@ -2019,6 +2828,9 @@ async def yt_audio_callback(client, callback_query):
         "🎵 **Select audio quality:**",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
+
+
+
 
 
 # ---- Back to menu ----
@@ -2075,7 +2887,8 @@ async def yt_back_callback(client, callback_query):
         row2.append(InlineKeyboardButton("📝 Captions", callback_data=f"yt_captions_{user_id}"))
     row2.append(InlineKeyboardButton("ℹ️ Details", callback_data=f"yt_details_{user_id}"))
 
-    buttons = InlineKeyboardMarkup([row1, row2])
+    row_ai = [InlineKeyboardButton("✨ AI Summarize", callback_data=f"yt_summarize_{user_id}")]
+    buttons = InlineKeyboardMarkup([row1, row2, row_ai])
     await callback_query.message.edit_text(menu_text, reply_markup=buttons)
 
 
@@ -2175,17 +2988,41 @@ async def yt_quick_callback(client, callback_query):
             raise RuntimeError("Downloaded file not found on disk.")
 
         # Handle thumbnail
+        thumb_url = info.get('thumbnail')
+        thumb_path_to_clean = None
+        
+        # 1. Try to find on disk
         for ext in ("webp", "jpg", "jpeg", "png"):
             p = f"{base}.{ext}"
             if os.path.exists(p):
                 thumb_path_to_clean = p
                 break
+        
+        # 2. If not found on disk, try downloading from URL
+        if not thumb_path_to_clean and thumb_url:
+            try:
+                temp_thumb = base + "_downloaded_thumb"
+                resp = requests.get(thumb_url, timeout=10)
+                if resp.status_code == 200:
+                    with open(temp_thumb, "wb") as f:
+                        f.write(resp.content)
+                    thumb_path_to_clean = temp_thumb
+            except Exception as e:
+                print(f"[Thumbnail] Download error: {e}")
 
         if thumb_path_to_clean:
             final_thumb_path = base + "_thumb.jpg"
             def _proc_thumb():
-                Image.open(thumb_path_to_clean).convert("RGB").save(final_thumb_path, "jpeg")
+                try:
+                    with Image.open(thumb_path_to_clean) as img:
+                        img.convert("RGB").save(final_thumb_path, "jpeg")
+                except Exception as e:
+                    print(f"[_proc_thumb] Error: {e}")
             await asyncio.to_thread(_proc_thumb)
+            # Clean up raw thumbnail if we downloaded it or it's not the final one
+            if thumb_path_to_clean != final_thumb_path:
+                try: os.remove(thumb_path_to_clean)
+                except: pass
 
         title = info.get('title', 'N/A')
         caption = f"{platform_emoji} **{title}**"
@@ -2208,7 +3045,7 @@ async def yt_quick_callback(client, callback_query):
         if user_id in ACTIVE_DOWNLOADS:
             del ACTIVE_DOWNLOADS[user_id]
         if download_dir and os.path.exists(download_dir):
-            shutil.rmtree(download_dir)
+            safe_remove_dir(download_dir)
 
 
 # ---- Download sniffed format ----
@@ -2314,7 +3151,7 @@ async def sniff_dl_callback(client, callback_query):
         if user_id in ACTIVE_DOWNLOADS:
             del ACTIVE_DOWNLOADS[user_id]
         if download_dir and os.path.exists(download_dir):
-            shutil.rmtree(download_dir)
+            safe_remove_dir(download_dir)
 
 
 # ---- Download selected format ----
@@ -2490,17 +3327,41 @@ async def yt_dl_callback(client, callback_query):
             raise RuntimeError("Downloaded file not found on disk.")
 
         # Handle thumbnail
+        thumb_url = info.get('thumbnail')
+        thumb_path_to_clean = None
+        
+        # 1. Try to find on disk
         for ext in ("webp", "jpg", "jpeg", "png"):
             p = f"{base}.{ext}"
             if os.path.exists(p):
                 thumb_path_to_clean = p
                 break
+        
+        # 2. If not found on disk, try downloading from URL
+        if not thumb_path_to_clean and thumb_url:
+            try:
+                temp_thumb = base + "_downloaded_thumb"
+                resp = requests.get(thumb_url, timeout=10)
+                if resp.status_code == 200:
+                    with open(temp_thumb, "wb") as f:
+                        f.write(resp.content)
+                    thumb_path_to_clean = temp_thumb
+            except Exception as e:
+                print(f"[Thumbnail] Download error: {e}")
 
         if thumb_path_to_clean:
             final_thumb_path = base + "_thumb.jpg"
             def _proc_thumb():
-                Image.open(thumb_path_to_clean).convert("RGB").save(final_thumb_path, "jpeg")
+                try:
+                    with Image.open(thumb_path_to_clean) as img:
+                        img.convert("RGB").save(final_thumb_path, "jpeg")
+                except Exception as e:
+                    print(f"[_proc_thumb] Error: {e}")
             await asyncio.to_thread(_proc_thumb)
+            # Clean up raw thumbnail if we downloaded it or it's not the final one
+            if thumb_path_to_clean != final_thumb_path:
+                try: os.remove(thumb_path_to_clean)
+                except: pass
 
         title = info.get('title', 'N/A')
         uploader = info.get('uploader', 'N/A')
@@ -2526,7 +3387,7 @@ async def yt_dl_callback(client, callback_query):
         if user_id in ACTIVE_DOWNLOADS:
             del ACTIVE_DOWNLOADS[user_id]
         if download_dir and os.path.exists(download_dir):
-            shutil.rmtree(download_dir)
+            safe_remove_dir(download_dir)
 
 
 # ---- YouTube: Captions ----
@@ -2679,8 +3540,8 @@ async def yt_caption_dl_callback(client, callback_query):
             document=caption_path,
             caption=cap_label,
         )
-        if sent_msg and MEDIA_BACKUP_CHANNEL:
-            await sent_msg.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=cap_label)
+        if sent_msg:
+            await forward_to_backup(client, sent_msg, caption=cap_label)
         await callback_query.message.edit_text(f"✅ **Caption ({lang}) sent!**")
 
     except Exception as e:
@@ -2770,8 +3631,8 @@ async def yt_details_callback(client, callback_query):
                 photo=thumb_path,
                 caption=details_text,
             )
-            if sent_msg and MEDIA_BACKUP_CHANNEL:
-                await sent_msg.copy(chat_id=MEDIA_BACKUP_CHANNEL, caption=details_text)
+            if sent_msg:
+                await forward_to_backup(client, sent_msg, caption=details_text)
         else:
             await original_message.reply_text(details_text, quote=True, disable_web_page_preview=True)
     except Exception as e:
@@ -2890,8 +3751,80 @@ async def url_handler(client, message):
         if user_id in ACTIVE_DOWNLOADS:
             del ACTIVE_DOWNLOADS[user_id]
         if download_dir and os.path.exists(download_dir):
-            shutil.rmtree(download_dir)
+            safe_remove_dir(download_dir)
 
+
+
+# ---- YouTube: Subscription Callbacks ----
+@app.on_callback_query(filters.regex(r"^sub_"))
+async def sub_callback(client, callback_query):
+    user_id = callback_query.from_user.id
+    channel_id = callback_query.data.split("_", 1)[1]
+    print(f"[sub_callback] User {user_id} clicked subscribe for {channel_id}")
+    
+    # Check if we have temp data from search in SUB_SESSIONS
+    channels = SUB_SESSIONS.get(user_id, {}).get('temp_channels', {})
+    channel_data = channels.get(channel_id)
+    
+    if not channel_data:
+        print(f"[sub_callback] No cached data in SUB_SESSIONS for {channel_id}, fetching from YT...")
+        # If not, try to fetch it again (fallback)
+        await callback_query.answer("Fetching channel info...")
+        try:
+            chan_url = f"https://www.youtube.com/channel/{channel_id}"
+            ydl_opts = get_base_ydl_opts(download=False, custom_opts={'extract_flat': True})
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(chan_url, download=False)
+                channel_data = {
+                    "name": info.get('channel') or info.get('uploader') or info.get('title'),
+                    "url": info.get('channel_url') or chan_url
+                }
+        except Exception as e:
+            print(f"[sub_callback] Fetch error: {e}")
+            return await callback_query.answer("❌ Error: Channel not found or restricted.", show_alert=True)
+
+    print(f"[sub_callback] Found channel info: {channel_data['name']}")
+    await callback_query.answer(f"⏳ Subscribing to {channel_data['name']}...")
+
+    # Get latest video ID
+    last_vid = None
+    try:
+        ydl_opts = get_base_ydl_opts(download=False, custom_opts={'extract_flat': True})
+        ydl_opts.update({'playlist_items': '1', 'quiet': True})
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(channel_data['url'], download=False)
+            if 'entries' in info and info['entries']:
+                last_vid = info['entries'][0].get('id')
+                print(f"[sub_callback] Latest video: {last_vid}")
+    except Exception as e:
+        print(f"[sub_callback] Error getting latest video: {e}")
+
+    try:
+        subscribe_channel(user_id, channel_id, channel_data['name'], channel_data['url'], last_vid)
+        await callback_query.message.edit_text(f"✅ Successfully subscribed to **{channel_data['name']}**!")
+        print(f"[sub_callback] Successfully subscribed user {user_id}")
+    except Exception as e:
+        print(f"[sub_callback] Subscription logic error: {e}")
+        traceback.print_exc()
+        await callback_query.answer("❌ Database Error.", show_alert=True)
+
+@app.on_callback_query(filters.regex(r"^unsub_"))
+async def unsub_callback(client, callback_query):
+    user_id = callback_query.from_user.id
+    channel_id = callback_query.data.split("_", 1)[1]
+    
+    unsubscribe_channel(user_id, channel_id)
+    await callback_query.answer("✅ Unsubscribed!", show_alert=True)
+    
+    # Refresh the list if possible
+    user_subs = get_user_subscriptions(user_id)
+    if not user_subs:
+        await callback_query.message.edit_text("📂 You have no active subscriptions.")
+    else:
+        buttons = []
+        for sub in user_subs:
+            buttons.append([InlineKeyboardButton(f"❌ Unsub: {sub['name']}", callback_data=f"unsub_{sub['id']}")])
+        await callback_query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
 
 # ---- YouTube Search Callbacks ----
 @app.on_callback_query(filters.regex(r"^search_page_"))
@@ -2960,6 +3893,7 @@ async def newchat_command(client, message):
 
 async def ai_chat_handler(client, message):
     """Handle non-command, non-URL text messages with AI."""
+    log_user(message.from_user.id)
     if not await check_membership(client, message):
         return
 
@@ -3054,9 +3988,60 @@ async def web_download(request):
         
     # Serve the massive file using aiohttp FileResponse
     response = aiohttp.web.FileResponse(file_path)
-    response.headers['Content-Disposition'] = f'attachment; filename="{link_data["name"]}"'
+    
+    # Use inline disposition for media to allow streaming in player
+    mime_type, _ = mimetypes.guess_type(file_path)
+    disposition = "inline" if mime_type and (mime_type.startswith("video/") or mime_type.startswith("audio/")) else "attachment"
+    
+    response.headers['Content-Disposition'] = f'{disposition}; filename="{link_data["name"]}"'
     return response
 
+
+async def web_get_feedbacks(request):
+    """Return all stored feedbacks"""
+    if not os.path.exists(FEEDBACKS_FILE):
+        return aiohttp.web.json_response([])
+    try:
+        with open(FEEDBACKS_FILE, "r") as f:
+            feedbacks = json.load(f)
+        return aiohttp.web.json_response(feedbacks)
+    except Exception:
+        return aiohttp.web.json_response([])
+
+async def web_add_feedback(request):
+    """Save a new feedback entry"""
+    try:
+        data = await request.json()
+        name = data.get('name', 'Anonymous').strip() or 'Anonymous'
+        message = data.get('message', '').strip()
+        
+        if not message:
+            return aiohttp.web.json_response({"status": "error", "message": "Feedback message cannot be empty."})
+
+        # Load existing
+        feedbacks = []
+        if os.path.exists(FEEDBACKS_FILE):
+            with open(FEEDBACKS_FILE, "r") as f:
+                try: feedbacks = json.load(f)
+                except: feedbacks = []
+        
+        # Add new
+        entry = {
+            "name": name[:50],
+            "message": message[:500],
+            "timestamp": time.strftime("%Y-%m-%d %H:%M")
+        }
+        feedbacks.insert(0, entry) # Newest first
+        
+        # Limit to 50 feedbacks for display
+        feedbacks = feedbacks[:50]
+        
+        with open(FEEDBACKS_FILE, "w") as f:
+            json.dump(feedbacks, f, indent=4)
+            
+        return aiohttp.web.json_response({"status": "success", "entry": entry})
+    except Exception as e:
+        return aiohttp.web.json_response({"status": "error", "message": str(e)})
 
 async def web_api_info(request):
     """API endpoint to fetch video metadata and available formats"""
@@ -3224,6 +4209,14 @@ async def auto_cleanup():
             try:
                 if os.path.exists(file_path):
                     os.remove(file_path)
+                    # Clean up parent directories if empty
+                    parent_dir = os.path.dirname(file_path)
+                    if os.path.exists(parent_dir) and not os.listdir(parent_dir):
+                        os.rmdir(parent_dir)
+                        # Also try one level up (user_id directory)
+                        user_dir = os.path.dirname(parent_dir)
+                        if os.path.exists(user_dir) and not os.listdir(user_dir) and user_dir != DOWNLOAD_DIRECTORY:
+                            os.rmdir(user_dir)
             except Exception: pass
             del ACTIVE_LINKS[h]
             
@@ -3295,7 +4288,8 @@ async def send_wa_message(to, text, file_path=None, direct_link=None):
     except Exception as e:
         print(f"[WA ERROR] Failed to send message: {e}")
 
-async def wa_process_url(wa_from, url, host="aharbot.qzz.io"):
+async def wa_process_url(wa_from, url, host=None):
+    if host is None: host = WEB_DOMAIN
     """
     Extract info and send format selection to WhatsApp.
     """
@@ -3393,7 +4387,7 @@ async def wa_download_format(wa_from, url, fmt):
                 'expiry': time.time() + 10800,  # 3 hours
                 'name': os.path.basename(file_path)
             }
-            public_url = f"https://aharbot.qzz.io/dl/{file_hash}"
+            public_url = f"https://{WEB_DOMAIN}/dl/{file_hash}"
             
             caption = f"✅ **Download ready!** ({file_size_mb:.1f}MB)\n\n⬇️ *Click here to download (Valid for 3 hours):*\n{public_url}"
                 
@@ -3538,6 +4532,8 @@ async def main():
     web_app.router.add_get('/', web_index)
     web_app.router.add_get('/dl/{hash}', web_download)
     web_app.router.add_post('/api/info', web_api_info)
+    web_app.router.add_get('/api/feedbacks', web_get_feedbacks)
+    web_app.router.add_post('/api/feedback', web_add_feedback)
     web_app.router.add_get('/api/ws_download', web_ws_download)
     web_app.router.add_post('/whatsapp', whatsapp_handler)
     web_app.router.add_static('/static', '/home/azureuser/aharbot/web/static')
@@ -3548,10 +4544,30 @@ async def main():
 
     print("Starting Telegram Bot...")
     await app.start()
+
+    # Diagnostic: Print bot's own info
+    me = await app.get_me()
+    print(f"Bot Identity: @{me.username} ({me.id})", flush=True)
+
+    # Resolve backup channel peer at startup to avoid PeerIdInvalid
+    if MEDIA_BACKUP_CHANNEL:
+        try:
+            # Try get_chat first
+            chat = await app.get_chat(MEDIA_BACKUP_CHANNEL)
+            print(f"Backup channel verified [get_chat]: {chat.title} ({chat.id})", flush=True)
+        except Exception as e:
+            # Try forced resolution via membership check
+            try:
+                member = await app.get_chat_member(MEDIA_BACKUP_CHANNEL, "me")
+                print(f"Backup channel verified [get_chat_member]: {MEDIA_BACKUP_CHANNEL} (Role: {member.status})", flush=True)
+            except Exception as e2:
+                print(f"Warning: Could not resolve backup channel {MEDIA_BACKUP_CHANNEL}. Error: {e2}", flush=True)
+                print(f"TIP: Please forward any message from the channel to the bot to help it 'see' the peer.", flush=True)
     
     # Auto-update Telegram commands menu
     try:
         commands = [
+            BotCommand("lens", "Image search via Google Lens"),
             BotCommand("start", "Start the bot"),
             BotCommand("help", "Show all commands & platforms"),
             BotCommand("search", "Search YouTube for videos"),
@@ -3566,6 +4582,10 @@ async def main():
             BotCommand("newchat", "Start a fresh AI conversation"),
             BotCommand("insta", "Scrape Instagram profile info"),
             BotCommand("whatsapp", "Check WhatsApp number info"),
+            BotCommand("subscribe", "Subscribe to a YouTube channel"),
+            BotCommand("unsubscribe", "Unsubscribe from a channel"),
+            BotCommand("channels", "List your subscriptions"),
+            BotCommand("search_channel", "Search YouTube for channels"),
             BotCommand("admin", "Send a message to the admin"),
             BotCommand("cancel", "Cancel your current download")
         ]
@@ -3576,6 +4596,8 @@ async def main():
     # Start the background tasks
     asyncio.create_task(auto_cleanup())
     asyncio.create_task(auto_update_ytdlp())
+    asyncio.create_task(check_subscriptions_loop(app))
+    asyncio.create_task(daily_recommendation_loop(app))
     
     # Keep running
     await idle()
