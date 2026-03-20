@@ -158,6 +158,7 @@ bot/feedbacks.json
 bot/users.txt
 bot/cookies.txt
 bot/instagram_cookies.txt
+bot/youtube_cookies.txt
 bot/*.png
 bot/*.html
 web/static/*.png
@@ -177,3 +178,8 @@ verify_feedback.py
 fix_thumbs.py
 test_ytdlp.py
 gen_pot.js
+cloudflared.deb
+cookies.txt
+instagram_cookies.txt
+nohup.out
+users.txt
