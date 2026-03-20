@@ -1,191 +1,122 @@
-# 🚀 Ahar All in One downloader (aharbot)
+# 🚀 Ahar All-In-One Downloader (AharBot)
 
-A premium, high-performance universal media downloader and streamer. This bot integrates **Telegram**, **WhatsApp**, and a **Web GUI** into a single powerful ecosystem.
+A premium, high-performance universal media downloader, streamer, and AI assistant. This bot integrates **Telegram**, **WhatsApp**, and a **Web GUI** into a single, powerful ecosystem for media management and discovery.
 
 ---
 
 ## 🌟 Official Links
 - **Telegram Bot:** [@aharallinonebot](https://t.me/aharallinonebot)
 - **Telegram Channel:** [@aharbots](https://t.me/aharbots)
-- **Website:** [https://aharbot.qzz.io](https://aharbot.qzz.io)
-- **WhatsApp Automation:**
+- **Website/Web GUI:** [https://aharbot.qzz.io](https://aharbot.qzz.io)
 
 ---
 
-## 🛠️ Command Reference (The "What & How")
+## 🔥 Key Features
+
+### 1. 📂 Universal Downloader
+- **Supports 1000+ Sites:** Powered by `yt-dlp` to handle YouTube, Instagram, Facebook, TikTok, X (Twitter), and many more.
+- **Multi-Format/Quality:** Choose from 144p to 4K video, or extract high-quality audio (MP3, M4A, etc.).
+- **Playlist Support:** Download entire YouTube playlists or series with a single link.
+- **Multi-Threaded:** Optimized for speed with parallel fragmented downloading and `ffmpeg` merging.
+
+### 2. 🤖 AI & Visual Intelligence
+- **🔍 Google Lens Search:** Reply to any image with `/lens` to find related videos, social media profiles (YouTube, FB, IG, TikTok, X), and visual matches.
+- **📝 AI Summarization:** Use the "AI Summarize" button on YouTube videos to get concise, context-aware summaries powered by local Ollama LLMs.
+- **💬 AI Chat Assistant:** Interactive AI chat mode that remembers context and assists with queries.
+
+### 3. 📺 YouTube Power Tools
+- **🔔 Smart Subscriptions:** `/subscribe` to channels and get notified automatically when new videos are uploaded.
+- **🔎 Channel Search:** Find and follow creators directly with `/search_channel`.
+- **📅 Daily Recommendations:** All users receive a hand-picked, high-quality music recommendation every 24 hours.
+
+### 4. 🌐 Web & Streaming Architecture
+- **⚡ Direct Web Links:** Generate 3-hour temporary links for instant browser streaming or downloading of files >2GB.
+- **🖼️ Auto-Thumbnails:** Original YouTube thumbnails are fetched, and frames are auto-extracted for other sources to ensure beautiful previews.
+- **🛡️ Session Isolation:** Each request runs in an isolated, temporary directory to prevent file collisions and ensure zero-leak cleanup.
+
+---
+
+## 🛠️ Command Reference
 
 ### 👤 User Commands
-- **`/lens`**: (Reply to image) Smart search via Google Lens. Extracts YouTube, FB, IG, and TikTok links.
-- **`/subscribe [URL]`**: Subscribe to a YouTube channel for new video notifications.
-- **`/unsubscribe [URL]`**: Remove a channel from your subscription list.
-- **`/channels`**: List all your active YouTube subscriptions.
-- **`/search_channel [query]`**: Find and subscribe to YouTube channels directly.
-- **`/cancel`**: Immediately halts any active download task.
+| Command | Description |
+| :--- | :--- |
+| **`/start`** | Initialize the bot and see a quick-start guide. |
+| **`/help`** | View advanced usage instructions and supported platforms. |
+| **`/dl [URL]`** | The core downloader. Accepts links from almost any platform. |
+| **`/youtube [URL]`** | Alias for `/dl` (specifically optimized for YouTube). |
+| **`/playlist [URL]`** | Fetch and download all videos from a playlist. |
+| **`/search [query]`** | Search YouTube and get interactive download buttons. |
+| **`/lens`** | (Reply to image) Analyze an image using Google Lens. |
+| **`/insta [URL]`** | Specialized handler for Instagram Reels, Stories, and Posts. |
+| **`/torrent [link/file]`** | High-speed torrent downloader (supports magnet links and `.torrent` files). |
+| **`/sniff [URL]`** | Advanced browser-based sniffing for hidden video streams. |
+| **`/subscribe [URL]`** | Subscribe to a YouTube channel for new video alerts. |
+| **`/unsubscribe [URL]`** | Stop receiving notifications for a channel. |
+| **`/channels`** | List and manage your active YouTube subscriptions. |
+| **`/search_channel [q]`** | Find and subscribe to channels directly in Telegram. |
+| **`/stats`** | View live server load, active tasks, and disk usage. |
+| **`/speedtest`** | Run a comprehensive network performance test. |
+| **`/ping`** | Check the bot's response latency. |
+| **`/newchat`** | Reset your AI chat session context. |
+| **`/cancel`** | Immediately stop any active download or background task. |
 
 ### 🔑 Admin & Power-User Commands
-- **`/admin`**: Opens the secure administrative panel (Status, User management, Logs).
-- **`/broadcast`**: (Reply to message) Sends a message to every single user in the database.
-- **`/whatsapp`**: Manages the Node.js bridge. Use this to view the QR code and login.
-- **`/logs`**: Instantly retrieves the last 50 lines of system logs.
-- **`/restart`**: Safely reboots the entire bot process.
-- **`/shell [cmd]`**: (Owner ONLY) Executes bash commands directly on the server.
-- **`/exec [py]`**: (Owner ONLY) Runs raw Python code within the bot's runtime context.
-- **`/url`**: (Reply to a file) Manually generates a 3-hour direct web link for any file stored in the bot.
+| Command | Description |
+| :--- | :--- |
+| **`/admin`** | Access the secure Admin Panel (User management, system status). |
+| **`/broadcast`** | (Reply to message) Send a message to every bot user. |
+| **`/whatsapp`** | Manage the WhatsApp bridge (Login, QR code, and session status). |
+| **`/logs`** | Retrieve the latest system logs for debugging. |
+| **`/restart`** | Perform a safe reboot of the bot process. |
+| **`/shell [cmd]`** | (Owner) Execute bash commands directly on the server. |
+| **`/exec [py]`** | (Owner) Run Python code within the bot's runtime. |
+| **`/url`** | (Reply to file) Generate a temporary direct web link for any file. |
+| **`/backup`** | Manually trigger a backup of the system configuration. |
+| **`/addapi`** | Update or add API keys dynamically. |
+| **`/delall`** | (Owner) Clear all active download sessions. |
 
 ---
 
-## 🔍 The "Full-Fledge Fetch" Explanation (Deep Dive)
+## ⚙️ Installation & Setup
 
-When you paste a link, the bot doesn't just "download" it. It performs a sophisticated **Fetch & Extract** sequence:
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/amharnisfar/aharbot.git
+   cd aharbot
+   ```
 
-1.  **Metadata Extraction:** The bot invokes `yt-dlp` using **Deno** as the JavaScript runtime (to solve anti-bot challenges). It extracts the Title, Thumbnail, Description, and every available Format (144p, 1080p, 4K, MP3, etc.).
-2.  **Interactive Selection:** It presents the user with a clean menu. You aren't forced into one quality; you choose exactly what fits your data plan.
-3.  **Fragmented Downloading:** Once a format is chosen, the bot downloads video and audio fragments in parallel using multi-threaded buffers for maximum speed.
-4.  **Merging & Processing:** It uses `ffmpeg` to merge high-quality video (dash) with high-quality audio into a standard `.mp4` or `.mkv`.
-5.  **Smart Routing:**
-    - If the file is **Under 2GB**, it sends it directly through Telegram.
-    - If it's for **WhatsApp**, it generates a **3-hour direct web link** immediately to avoid browser crashes.
-    - If it's **Over 2GB**, it hosts it on the internal web server.
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   # Manual install:
+   pip install pyrogram tgcrypto yt-dlp requests pillow opencv-python libtorrent python-dotenv
+   ```
 
----
+3. **Configure Environment:**
+   - Copy `bot/.env.example` to `bot/.env`
+   - Fill in your `API_ID`, `API_HASH`, and `BOT_TOKEN` from [my.telegram.org](https://my.telegram.org).
 
-## 🤖 Advanced AI Features
-
-The bot is now equipped with powerful AI and automation capabilities:
-
-### 1. 🔍 Google Lens Image Search
-- **Visual Intelligence:** Reply to any image with `/lens` to analyze it.
-- **Social Media Extraction:** Automatically finds related videos and profiles on **YouTube, Facebook, Instagram, TikTok, and X**.
-- **Interactive Buttons:** Found videos are presented with descriptive buttons for instant downloading.
-
-### 2. 📝 AI Video Summarization
-- **Ollama Integration:** Utilizes local LLMs to provide concise summaries of YouTube videos.
-- **Context-Aware:** Analyzes captions and metadata to give you the key takeaways without watching the whole video.
-- **One-Click:** Triggered via the "AI Summarize" button after identifying a YouTube link.
-
-### 3. 📅 Daily Music Recommendations
-- **Automated Vibe:** Every day, all users receive a random, high-quality music recommendation from YouTube.
-- **Smart Discovery:** Uses curated search trends to find the latest hits and trending tracks.
-
-### 4. 📺 YouTube Subscriptions
-- **Stay Updated:** Follow your favorite creators and get notified the moment they upload a new video.
-- **Background Monitoring:** A robust worker checks for updates every 12 hours.
+4. **Run the Bot:**
+   ```bash
+   python bot/bot.py
+   ```
 
 ---
 
-## 🛡️ Isolated Session Architecture (Security & Concurrency)
-
-To prevent file name collisions and ensure server stability, the bot utilizes a **Session Isolation Model**:
-
-1.  **Unique Directories:** Every download request (Universal, Direct URL, Playlist) is assigned a unique, user-specific, and timestamped directory:
-    - Path format: `/datadrive/downloads/{user_id}/{YYYY-MM-DD_HH-MM-SS}/`
-2.  **Concurrent Execution:** Multiple users can download files with identical names simultaneously without interference.
-3.  **Automated Cleanup:** The bot implements a strict zero-leak policy. Once a file is uploaded to Telegram or the 3-hour web link is expired, the entire session folder is recursively removed using `shutil.rmtree`.
-4.  **Resource Persistence:** Large files (>2GB) are held in their isolated directories for exactly 3 hours to serve as direct web streams before being purged.
-
----
-
-## 🌐 Dynamic DNS (dpdns.org) & Cloudflared Setup
-
-Follow this guide to get a professional free domain and expose your bot to the global web without a static IP.
-
-### Step 1: Get your Free Domain
-1.  Go to [DigitalPlat Domain](https://domain.digitalplat.org).
-2.  Register for a free account (GitHub Login supported).
-3.  Pick a domain name (e.g., `aharbot.dpdns.org`).
-4.  Keep the dashboard open for the next step.
-
-### Step 2: Establish the Cloudflare Tunnel
-1.  Login to [Cloudflare Zero Trust](https://one.dash.cloudflare.com).
-2.  Go to **Networks** -> **Tunnels**.
-3.  Click **Create a Tunnel** and name it `ahar-tunnel`.
-4.  Copy the **Connector Command** for Linux and run it on your server:
-    ```bash
-    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-    sudo dpkg -i cloudflared.deb
-    sudo cloudflared service install YOUR_TOKEN_HERE
-    ```
-5.  Go to the **Public Hostname** tab in Cloudflare.
-6.  Add a hostname:
-    - **Subdomain:** `aharbot`
-    - **Domain:** (Select your `dpdns.org` domain which you pointed to Cloudflare NS)
-    - **Service:** `http://localhost:8080` (The internal port our bot uses).
-
-### Step 3: Why use this?
-- **No Port Forwarding:** Your router stays safe.
-- **Static URL:** Your bot link (e.g., `https://aharbot.dpdns.org/dl/xyz`) never changes, even if your Home/VPS IP changes.
-- **SSL Security:** Automatic HTTPS encryption provided by Cloudflare.
-
----
-
-## 📱 Supported Platforms
-
-The bot supports downloading and streaming from **1000+ websites**. Here are the most popular ones:
-
-<p align="center">
-  <img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" />
-  <img src="https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white" />
-  <img src="https://img.shields.io/badge/Facebook-1877F2?style=for-the-badge&logo=facebook&logoColor=white" />
-  <img src="https://img.shields.io/badge/TikTok-000000?style=for-the-badge&logo=tiktok&logoColor=white" />
-  <img src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" />
-  <img src="https://img.shields.io/badge/SoundCloud-FF3300?style=for-the-badge&logo=soundcloud&logoColor=white" />
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Pinterest-BD081C?style=for-the-badge&logo=pinterest&logoColor=white" />
-  <img src="https://img.shields.io/badge/Reddit-FF4500?style=for-the-badge&logo=reddit&logoColor=white" />
-  <img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" />
-  <img src="https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white" />
-  <img src="https://img.shields.io/badge/Vimeo-1AB7EA?style=for-the-badge&logo=vimeo&logoColor=white" />
-  <img src="https://img.shields.io/badge/Snapchat-FFFC00?style=for-the-badge&logo=snapchat&logoColor=black" />
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
-  <img src="https://img.shields.io/badge/DailyMotion-0066DC?style=for-the-badge&logo=dailymotion&logoColor=white" />
-  <img src="https://img.shields.io/badge/Bilibili-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" />
-  <img src="https://img.shields.io/badge/Telegram-26A6E1?style=for-the-badge&logo=telegram&logoColor=white" />
-  <img src="https://img.shields.io/badge/VK-4C75A3?style=for-the-badge&logo=vk&logoColor=white" />
-  <img src="https://img.shields.io/badge/Rumble-85B742?style=for-the-badge&logo=rumble&logoColor=white" />
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Odysee-EF1970?style=for-the-badge&logo=odysee&logoColor=white" />
-  <img src="https://img.shields.io/badge/Mixcloud-52AAD8?style=for-the-badge&logo=mixcloud&logoColor=white" />
-  <img src="https://img.shields.io/badge/Bandcamp-1EA1F3?style=for-the-badge&logo=bandcamp&logoColor=white" />
-  <img src="https://img.shields.io/badge/TED-E62B1E?style=for-the-badge&logo=ted&logoColor=white" />
-  <img src="https://img.shields.io/badge/Coursera-0056D2?style=for-the-badge&logo=coursera&logoColor=white" />
-  <img src="https://img.shields.io/badge/Udemy-A435F0?style=for-the-badge&logo=udemy&logoColor=white" />
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Spotify-1DB954?style=for-the-badge&logo=spotify&logoColor=white" />
-  <img src="https://img.shields.io/badge/Apple_Music-FA243C?style=for-the-badge&logo=apple-music&logoColor=white" />
-  <img src="https://img.shields.io/badge/Deezer-FEAA2D?style=for-the-badge&logo=deezer&logoColor=white" />
-  <img src="https://img.shields.io/badge/Tidal-000000?style=for-the-badge&logo=tidal&logoColor=white" />
-  <img src="https://img.shields.io/badge/Crunchyroll-F47521?style=for-the-badge&logo=crunchyroll&logoColor=white" />
-  <img src="https://img.shields.io/badge/Twitch-9146FF?style=for-the-badge&logo=twitch&logoColor=white" />
-</p>
-
----
-
-## 🏗️ Technical Component Map
-
-| Component | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Backend** | Python 3.10 | Core logic, user database, and Telegram API. |
-| **Bridge** | Node.js | Powered by `whatsapp-web.js` to handle WA sessions. |
-| **Browser** | Puppeteer | Headless Chrome used to render/send WhatsApp media. |
-| **Runtime** | Deno | Executes extractor JS to bypass YouTube bot detection. |
-| **Web UI** | HTML5/CSS3 | Premium Glassmorphism interface for direct browser downloads. |
+## 🏗️ Technical Stack
+- **Backend:** Python 3.10 (Pyrogram)
+- **WhatsApp Bridge:** Node.js (whatsapp-web.js)
+- **Runtime:** Deno (for YouTube extractor stabilization)
+- **Database:** Local JSON (Subscriptions/Feedback)
+- **Web UI:** Native Glassmorphism (HTML5/CSS3/JS)
+- **Browser Automation:** Playwright / Puppeteer
 
 ---
 
 ## ✍️ Created By
 - **[Amhar Nisfer](https://github.com/amharnisfar)** - Lead Developer & Architect
-
-## 🤝 Partnership Developer
-- **[Izzath Nisfer](https://github.com/izzathnisfer)** - Core Collaborator & Partner
+- **[Izzath Nisfer](https://github.com/izzathnisfer)** - Core Collaborator
 
 ---
 
