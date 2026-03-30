@@ -27,6 +27,8 @@ import aiohttp.web
 import string
 import random
 import traceback
+import urllib.parse
+import numpy as np
 
 from pyrogram import Client, filters, idle
 from dotenv import load_dotenv
@@ -38,6 +40,11 @@ load_dotenv("/home/azureuser/aharbot/bot/.env")
 ACTIVE_LINKS = {}  # { 'hash': {'path': '/datadrive/downloads/file.mp4', 'expiry': timestamp, 'name': 'file.mp4'} }
 WA_SESSIONS = {}   # { 'wa_from': { 'url': '...', 'formats': [...], 'timestamp': ... } }
 CANCELLED_USERS = set() # Track users who requested to cancel their active download
+
+# --- YouTube Web Interface Auth ---
+OTP_STORE = {}     # { 'username': {'otp': '123456', 'expiry': float, 'chat_id': int} }
+WEB_SESSIONS = {}  # { 'session_id': {'username': str, 'chat_id': int, 'expiry': float} }
+USER_MAP_FILE = "/home/azureuser/aharbot/bot/user_map.json"
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, BotCommand
 from pyrogram.errors import UserNotParticipant, ChatAdminRequired, ChatWriteForbidden
 
@@ -88,26 +95,41 @@ def get_total_users():
     except Exception:
         return 0
 
-def log_user(user_id):
-    """Logs a unique user ID to users.txt for daily recommendations."""
-    if not user_id:
+def log_user(user):
+    """Logs a unique user ID and username mapping for YouTube web interface."""
+    if not user or not user.id:
         return
-    user_id_str = str(user_id)
+    user_id_str = str(user.id)
+    username = (user.username or f"user_{user_id_str}").lower()
+    
+    # 1. Update users.txt
     known_users = set()
     if os.path.exists(USERS_FILE):
         try:
             with open(USERS_FILE, "r") as f:
                 known_users = set(line.strip() for line in f)
-        except Exception:
-            pass
+        except Exception: pass
             
     if user_id_str not in known_users:
         try:
             with open(USERS_FILE, "a") as f:
                 f.write(f"{user_id_str}\n")
-            print(f"[UserTrack] Logged new user: {user_id_str}")
-        except Exception as e:
-            print(f"[UserTrack] Error logging user: {e}")
+        except Exception: pass
+
+    # 2. Update user_map.json (for username -> id lookups)
+    user_map = {}
+    if os.path.exists(USER_MAP_FILE):
+        try:
+            with open(USER_MAP_FILE, "r") as f:
+                user_map = json.load(f)
+        except Exception: pass
+    
+    if username not in user_map or user_map[username] != user.id:
+        user_map[username] = user.id
+        try:
+            with open(USER_MAP_FILE, "w") as f:
+                json.dump(user_map, f, indent=4)
+        except Exception: pass
 
 async def get_random_music_recommendation():
     """Fetches a random high-quality music video from YouTube."""
@@ -334,6 +356,7 @@ def get_base_ydl_opts(download=False, custom_opts=None, url=None, user_id=None, 
             'outtmpl': f'{target_dir}/%(title).100s_%(id)s.%(ext)s',
             'restrictfilenames': True,
             'merge_output_format': 'mp4',
+            'writethumbnail': True,  # Ensure thumbnails are always downloaded
         })
         
     if custom_opts:
@@ -679,168 +702,177 @@ def _detect_file_type(file_path: str) -> str:
 
 
 def _get_video_thumbnail(video_path):
-    """Extract a frame from the video at 1 second to use as a thumbnail."""
+    import numpy as np
     if not os.path.exists(video_path):
         return None
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"[ThumbGen] Failed to open video: {video_path}")
+        return None
     
-    thumb_path = video_path + "_auto_thumb.jpg"
-    try:
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            return None
-        
-        # Try to grab frame at 1 second mark
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps > 0:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int(fps))
-        
-        success, frame = cap.read()
-        if success:
-            # Resize if too large for Telegram (max 320x320 usually works best for thumbs)
-            h, w = frame.shape[:2]
-            max_size = 320
-            if max(h, w) > max_size:
-                scale = max_size / max(h, w)
-                frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
-            
-            cv2.imwrite(thumb_path, frame)
-            cap.release()
-            return thumb_path
-        
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if total_frames <= 0:
+        print(f"[ThumbGen] No frames found in: {video_path}")
         cap.release()
-    except Exception as e:
-        print(f"[_get_video_thumbnail] Error: {e}")
-    
-    return None
+        return None
 
+    best_frame = None
+    # Check 10%, 30%, 50%, 70%, 90% of the video to avoid black intro/outro
+    for pct in [0.1, 0.3, 0.5, 0.7, 0.9]:
+        target = int(total_frames * pct)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, target)
+        ret, frame = cap.read()
+        if ret:
+            avg_brightness = np.mean(frame)
+            if avg_brightness > 30: # Decent brightness
+                best_frame = frame
+                print(f"[ThumbGen] Found good frame at {pct*100}% (Brightness: {avg_brightness:.2f})")
+                break
+            elif best_frame is None or avg_brightness > np.mean(best_frame):
+                best_frame = frame
+                print(f"[ThumbGen] Frame at {pct*100}% is too dark ({avg_brightness:.2f}), searching more...")
+    
+    cap.release()
+    if best_frame is None:
+        return None
+        
+    thumb_path = video_path + "_auto.jpg"
+    try:
+        img = Image.fromarray(cv2.cvtColor(best_frame, cv2.COLOR_BGR2RGB))
+        img.thumbnail((320, 320))
+        img.save(thumb_path, "JPEG", quality=80, optimize=True)
+        return thumb_path
+    except Exception as e:
+        print(f"[ThumbGen] Error saving: {e}")
+        return None
 
 async def upload_file(client: Client, message: Message, chat_id: int, file_path: str, caption: str = "", thumb_path: str = None, duration: int = 0, width: int = 0, height: int = 0, url: str = ""):
     """Upload any file type (video, audio, photo, or document) with progress."""
     file_type = _detect_file_type(file_path)
-    # If the user passed a message but wants it to be the status message
     status_message = await client.send_message(chat_id, f"Preparing to upload ({file_type})...")
 
     # --- Add user info safely ---
     user = message.from_user if message else None
-    if user:
-        user_info = f"\n\n👤 Requested by: {user.first_name or 'Unknown'} (ID: `{user.id}`)"
-    else:
-        user_info = ""
-    
+    user_info = f"\n\n👤 Requested by: {user.first_name or 'Unknown'} (ID: `{user.id}`)" if user else ""
     source_info = f"\n\n🔗 [Source Link]({url})" if url else ""
     final_caption = (caption or "") + source_info + user_info
 
-    # --- Extract video metadata if applicable (only if not provided) ---
-    if file_type == "video" and os.path.exists(file_path) and (duration == 0 or width == 0 or height == 0):
+    # --- Extract video metadata if applicable ---
+    if file_type == "video" and os.path.exists(file_path):
         def get_video_meta():
-            d, w, h = duration, width, height
             try:
                 cap = cv2.VideoCapture(file_path)
-                if cap.isOpened():
-                    if w == 0: w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    if h == 0: h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-                    fps = cap.get(cv2.CAP_PROP_FPS)
-                    if d == 0 and fps and fps > 0 and frame_count and frame_count > 0:
-                        d = int(frame_count / fps)
+                if not cap.isOpened(): return (0, 0, 0)
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                dur = int(frame_count / fps) if fps > 0 else 0
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 cap.release()
+                return (dur, w, h)
             except Exception as e:
-                print(f"[upload_file] Video metadata extraction error: {e}")
-            return d, w, h
+                print(f"[Upload] Meta extraction error: {e}")
+                return (0, 0, 0)
 
-        duration, width, height = await asyncio.to_thread(get_video_meta)
+        ext_dur, ext_w, ext_h = await asyncio.to_thread(get_video_meta)
+        if duration == 0: duration = ext_dur
+        if width == 0: width = ext_w
+        if height == 0: height = ext_h
+        print(f"[Upload] Video Meta: {width}x{height}, Duration: {duration}s")
 
-    last_update_time = 0
-
-    async def progress(current, total):
-        nonlocal last_update_time
-        now = time.time()
-        if now - last_update_time > 2:
-            if total > 0:
-                percentage = current * 100 / total
-                bar = progress_bar(percentage)
-                try:
-                    await status_message.edit_text(f"**Uploading ({file_type})...**\n{bar}")
-                except Exception:
-                    pass
-                last_update_time = now
-
+    # --- Handle Thumbnail ---
     thumb = thumb_path if (thumb_path and os.path.exists(thumb_path)) else None
+    if thumb:
+        print(f"[Upload] Using provided thumb: {thumb} (Size: {os.path.getsize(thumb)} bytes)")
     
-    # Auto-generate thumbnail for videos if missing
     if file_type == "video" and not thumb:
         await status_message.edit_text(f"Generating thumbnail...")
         thumb = await asyncio.to_thread(_get_video_thumbnail, file_path)
-    sent_msg = None
+        if thumb:
+            print(f"[Upload] Generated auto-thumb: {thumb} (Size: {os.path.getsize(thumb)} bytes)")
+        else:
+            print(f"[Upload] FAILED to generate thumb for: {file_path}")
 
+    # --- Progress Hook ---
+    last_update_time = 0
+    async def progress(current, total):
+        nonlocal last_update_time
+        now = time.time()
+        if now - last_update_time > 3:
+            if total > 0:
+                percentage = current * 100 / total
+                bar = progress_bar(percentage)
+                try: await status_message.edit_text(f"**Uploading ({file_type})...**\n{bar}")
+                except: pass
+                last_update_time = now
+
+    # --- CHECK 2GB LIMIT ---
+    try:
+        file_size = os.path.getsize(file_path)
+        if file_size > 1900 * 1024 * 1024:
+            print(f"[Upload] File too large for TG: {format_bytes(file_size)}")
+            file_hash = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            ACTIVE_LINKS[file_hash] = {'path': file_path, 'expiry': time.time() + 10800, 'name': os.path.basename(file_path)}
+            dl_url = f"https://{WEB_DOMAIN}/dl/{file_hash}"
+            link_btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Direct Web Download (Valid 3h)", url=dl_url)]])
+            await status_message.edit_text(f"⚠️ **File too large (>2GB)!**\n📂 `{os.path.basename(file_path)}`\n⚖️ `{format_bytes(file_size)}`", reply_markup=link_btn)
+            return status_message
+    except Exception as e:
+        print(f"[Upload] Size check error: {e}")
+
+    # --- Upload ---
     try:
         await status_message.edit_text(f"Starting upload ({file_type})…")
+        sent_msg = None
         
-        d_val = int(duration or 0)
-        w_val = int(width or 0)
-        h_val = int(height or 0)
-
         if file_type == "video":
             sent_msg = await app.send_video(
-                chat_id=int(chat_id),
-                video=file_path,
-                caption=final_caption,
-                duration=d_val if d_val > 0 else None,
-                width=w_val if w_val > 0 else None,
-                height=h_val if h_val > 0 else None,
-                thumb=thumb,
-                supports_streaming=True,
-                progress=progress
+                chat_id=int(chat_id), video=file_path, caption=final_caption,
+                duration=int(duration) if duration > 0 else None,
+                width=int(width) if width > 0 else None,
+                height=int(height) if height > 0 else None,
+                thumb=thumb, supports_streaming=True, progress=progress
             )
         elif file_type == "audio":
             sent_msg = await app.send_audio(
-                chat_id=int(chat_id),
-                audio=file_path,
-                caption=final_caption,
-                thumb=thumb,
-                progress=progress
+                chat_id=int(chat_id), audio=file_path, caption=final_caption,
+                thumb=thumb, progress=progress
             )
         elif file_type == "photo":
             sent_msg = await app.send_photo(
-                chat_id=int(chat_id),
-                photo=file_path,
-                caption=final_caption,
-                progress=progress
+                chat_id=int(chat_id), photo=file_path, caption=final_caption, progress=progress
             )
-        else:  # document
+        else: # document
             sent_msg = await app.send_document(
-                chat_id=int(chat_id),
-                document=file_path,
-                caption=final_caption,
-                thumb=thumb,
-                progress=progress
+                chat_id=int(chat_id), document=file_path, caption=final_caption,
+                thumb=thumb, progress=progress
             )
+        
+        if sent_msg:
+            await status_message.delete()
+            # Robust forwarding using helper
+            await forward_to_backup(app, sent_msg, caption=final_caption)
+            
+            # Add web download link to the final message
+            try:
+                file_hash = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+                ACTIVE_LINKS[file_hash] = {'path': file_path, 'expiry': time.time() + 10800, 'name': os.path.basename(file_path)}
+                dl_url = f"https://{WEB_DOMAIN}/dl/{file_hash}"
+                link_button = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Web Direct Download (Valid 3h)", url=dl_url)]])
+                await sent_msg.edit_reply_markup(reply_markup=link_button)
+            except: pass
+            
+            return sent_msg
 
-        # Robust forwarding using helper
-        await forward_to_backup(app, sent_msg, caption=final_caption)
- 
-        try:
-            file_hash = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
-            # Active link expires in 3 hours
-            ACTIVE_LINKS[file_hash] = {'path': file_path, 'expiry': time.time() + 10800, 'name': os.path.basename(file_path)}
-            dl_url = f"https://{WEB_DOMAIN}/dl/{file_hash}"
-            link_button = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Web Direct Download (Valid 3h)", url=dl_url)]])
-            await sent_msg.edit_reply_markup(reply_markup=link_button)
-        except: pass
- 
-        await status_message.edit_text(f"✅ **Upload complete!**")
     except Exception as e:
-        err_trace = traceback.format_exc()
-        print(f"[upload_file] FATAL: {err_trace}")
-        await status_message.edit_text(f"❌ **Upload Failed!**\n\nError: `{e}`\n\n`{err_trace[-200:] if len(err_trace) > 200 else err_trace}`")
+        print(f"[Upload] Critical error: {e}")
+        await status_message.edit_text(f"❌ **Upload Failed!**\n\nError: `{str(e)[:100]}`")
+        return None
     finally:
-        if thumb and os.path.exists(thumb):
+        if thumb and os.path.exists(thumb) and ("_thumb.jpg" in thumb or "_auto" in thumb):
             try: os.remove(thumb)
             except: pass
-        if thumb_path and os.path.exists(thumb_path):
-            try: os.remove(thumb_path)
-            except: pass
-
 # ---- Contact Admin ----
 @app.on_message(filters.command("admin") & filters.private)
 async def admin_contact(client, message):
@@ -876,6 +908,7 @@ async def admin_contact(client, message):
 # ---- Admin Commands ----
 @app.on_message(filters.command("delall"))
 async def delall_command(client, message):
+    log_user(message.from_user)
     if message.from_user.id != 7962617461: # This ID should be replaced with an actual admin ID from config
         await message.reply_text("❌ You are not authorized to use this command.")
         return
@@ -1199,6 +1232,22 @@ async def extract_transcript(url):
         print(f"Error cleaning transcript: {e}")
         return None
 
+async def video_search_handler(client, message):
+    log_user(message.from_user)
+    if isinstance(message, Message):
+        if not await check_membership(client, message):
+            return
+        if len(message.command) < 2:
+            return
+        query = message.text.split(" ", 1)[1].strip()
+    else:
+        query = message.data.split("|")[1]
+
+    # This is a helper that triggers the search menu
+    # Search logic already exists in search_command so we just call it or mock it
+    # But wait, search_command is what actually does the search.
+    # Let's just make sure log_user is called in search_command.
+
 async def search_lens(image_path):
     """
     Improved Google Lens search by image URL.
@@ -1346,12 +1395,10 @@ async def handle_photo(client, message):
 @app.on_message(filters.command("lens"))
 async def lens_cmd(client, message):
     await message.reply("📸 **Send me any photo**, and I will use Google Lens to find related YouTube videos for you!")
-
-
 @app.on_message(filters.command("start"))
 async def start_command(client, message):
-    # Track user ID for broadcasts and daily recommendations
-    log_user(message.from_user.id)
+    # Track user ID and username for YouTube web interface
+    log_user(message.from_user)
 
     if await check_membership(client, message):
         await message.reply_text(
@@ -1811,7 +1858,9 @@ async def playlist_command(client, message):
                         def _proc_pthumb():
                             try:
                                 with Image.open(thumb_path_to_clean) as img:
-                                    img.convert("RGB").save(final_thumb_path, "jpeg")
+                                    img = img.convert("RGB")
+                                    img.thumbnail((320, 320))
+                                    img.save(final_thumb_path, "JPEG", quality=80, optimize=True)
                             except: pass
                         await asyncio.to_thread(_proc_pthumb)
                         if thumb_path_to_clean != final_thumb_path:
@@ -2129,10 +2178,14 @@ async def torrent_handler(client, message):
             info = lt.torrent_info(source)
             h = ses.add_torrent({'ti': info, 'save_path': download_path})
         else:  # magnet
-            h = lt.add_magnet_uri(ses, source, params)
+            # Modern libtorrent 2.0 API to fix deprecation warnings
+            add_params = lt.parse_magnet_uri(source)
+            add_params.save_path = download_path
+            h = ses.add_torrent(add_params)
 
         await status_message.edit_text("Downloading metadata from torrent...", reply_markup=cancel_button)
-        while not h.has_metadata():
+        # Modern libtorrent 2.0 API to fix deprecation warnings
+        while not h.status().has_metadata:
             await asyncio.sleep(1)
 
         await status_message.edit_text("Metadata found! Starting file download...", reply_markup=cancel_button)
@@ -2172,8 +2225,9 @@ async def torrent_handler(client, message):
             file_name = os.path.basename(file_path)
             if file_name.endswith(('.!qB', '.parts')): continue  # Skip temp files
             upload_caption = f"**Downloaded via Torrent:**\n`{file_name}`"
-            # MODIFIED: Pass message.chat.id to send the file to the user
-            await upload_file(client, message, message.chat.id, file_path, caption=upload_caption, url=url)
+            # Define url to fix NameError
+            torrent_url = source if link_type == "magnet link" else ""
+            await upload_file(client, message, message.chat.id, file_path, caption=upload_caption, url=torrent_url)
 
         await status_message.edit_text("✅ **All torrent uploads complete!**")
 
@@ -2347,7 +2401,7 @@ async def universal_dl_handler(client, message):
 async def auto_detect_url_handler(client, message):
     """Auto-detect supported URLs pasted without any command."""
     if message.from_user:
-        log_user(message.from_user.id)
+        log_user(message.from_user)
     if not message.text:
         return
 
@@ -3004,12 +3058,6 @@ async def yt_quick_callback(client, callback_query):
             prepared = ydl.prepare_filename(info)
 
         base, _ = os.path.splitext(prepared)
-        # Find any downloaded file
-        for ext in (".mp4", ".mkv", ".webm", ".mp3", ".m4a", ".jpg", ".png", ".gif"):
-            p = base + ext
-            if os.path.exists(p):
-                file_path = p
-                break
 
         if not file_path:
             # Fallback: find any file with the base name
@@ -3050,7 +3098,9 @@ async def yt_quick_callback(client, callback_query):
             def _proc_thumb():
                 try:
                     with Image.open(thumb_path_to_clean) as img:
-                        img.convert("RGB").save(final_thumb_path, "jpeg")
+                        img = img.convert("RGB")
+                        img.thumbnail((320, 320))
+                        img.save(final_thumb_path, "JPEG", quality=80, optimize=True)
                 except Exception as e:
                     print(f"[_proc_thumb] Error: {e}")
             await asyncio.to_thread(_proc_thumb)
@@ -3389,7 +3439,9 @@ async def yt_dl_callback(client, callback_query):
             def _proc_thumb():
                 try:
                     with Image.open(thumb_path_to_clean) as img:
-                        img.convert("RGB").save(final_thumb_path, "jpeg")
+                        img = img.convert("RGB")
+                        img.thumbnail((320, 320))
+                        img.save(final_thumb_path, "JPEG", quality=80, optimize=True)
                 except Exception as e:
                     print(f"[_proc_thumb] Error: {e}")
             await asyncio.to_thread(_proc_thumb)
@@ -3928,7 +3980,7 @@ async def newchat_command(client, message):
 
 async def ai_chat_handler(client, message):
     """Handle non-command, non-URL text messages with AI."""
-    log_user(message.from_user.id)
+    log_user(message.from_user)
     if not await check_membership(client, message):
         return
 
@@ -3990,6 +4042,298 @@ async def ai_chat_handler(client, message):
 
 
 # -------- Web Server Routes --------
+# --- YouTube Web Interface Handlers ---
+async def web_youtube_index(request):
+    try:
+        with open("/home/azureuser/aharbot/web/static/youtube.html", "r") as f:
+            html = f.read()
+        return aiohttp.web.Response(text=html, content_type='text/html')
+    except Exception:
+        return aiohttp.web.Response(text="YouTube Interface under construction.", status=200)
+
+async def web_youtube_login(request):
+    try:
+        data = await request.json()
+        username = data.get('username', '').strip().lower().replace("@", "")
+        if not username:
+            return aiohttp.web.json_response({"error": "Username required"}, status=400)
+        
+        # Look up chat_id
+        user_map = {}
+        if os.path.exists(USER_MAP_FILE):
+            with open(USER_MAP_FILE, "r") as f:
+                user_map = json.load(f)
+        
+        chat_id = user_map.get(username)
+        if not chat_id:
+            return aiohttp.web.json_response({"error": "User not found. Please message the bot first."}, status=404)
+        
+        # Generate OTP
+        otp = "".join(random.choices(string.digits, k=6))
+        OTP_STORE[username] = {"otp": otp, "expiry": time.time() + 300, "chat_id": chat_id}
+        
+        # Send OTP via Bot
+        bot_msg = f"🔐 **YouTube Web Login OTP**\n\nYour one-time password is: `{otp}`\n\nThis code expires in 5 minutes."
+        await app.send_message(chat_id, bot_msg)
+        
+        return aiohttp.web.json_response({"success": True, "message": "OTP sent to your Telegram!"})
+    except Exception as e:
+        return aiohttp.web.json_response({"error": str(e)}, status=500)
+
+async def web_youtube_verify(request):
+    try:
+        data = await request.json()
+        username = data.get('username', '').strip().lower().replace("@", "")
+        otp = data.get('otp', '').strip()
+        
+        if username not in OTP_STORE or OTP_STORE[username]['otp'] != otp:
+            return aiohttp.web.json_response({"error": "Invalid or expired OTP"}, status=401)
+        
+        if time.time() > OTP_STORE[username]['expiry']:
+            del OTP_STORE[username]
+            return aiohttp.web.json_response({"error": "OTP expired"}, status=401)
+        
+        # Create session
+        session_id = "".join(random.choices(string.ascii_letters + string.digits, k=32))
+        WEB_SESSIONS[session_id] = {
+            "username": username,
+            "chat_id": OTP_STORE[username]['chat_id'],
+            "expiry": time.time() + 86400 * 7 # 7 days
+        }
+        del OTP_STORE[username]
+        
+        resp = aiohttp.web.json_response({"success": True})
+        resp.set_cookie("yt_session", session_id, max_age=86400 * 7)
+        return resp
+    except Exception as e:
+        return aiohttp.web.json_response({"error": str(e)}, status=500)
+
+async def get_authenticated_user(request):
+    session_id = request.cookies.get("yt_session")
+    if not session_id or session_id not in WEB_SESSIONS:
+        return None
+    session = WEB_SESSIONS[session_id]
+    if time.time() > session['expiry']:
+        del WEB_SESSIONS[session_id]
+        return None
+    return session
+
+async def web_youtube_get_subs(request):
+    user = await get_authenticated_user(request)
+    if not user: return aiohttp.web.json_response({"error": "Unauthorized"}, status=401)
+    
+    chat_id = user['chat_id']
+    all_subs = load_subscriptions()
+    user_subs = []
+    
+    for cid, data in all_subs.items():
+        if chat_id in data.get('subscribers', []):
+            user_subs.append({
+                "id": cid,
+                "name": data['name'],
+                "url": data['url'],
+                "logo": data.get('logo') or f"https://www.google.com/s2/favicons?domain=youtube.com&sz=128" # Fallback
+            })
+    return aiohttp.web.json_response(user_subs)
+
+async def web_youtube_get_videos(request):
+    channel_id = request.query.get('channel_id')
+    page = int(request.query.get('page', 1))
+    page_size = 20
+    start_idx = (page - 1) * page_size + 1
+    end_idx = page * page_size
+    vtype = request.query.get('type', 'videos') # 'videos' or 'shorts'
+    if vtype not in ['videos', 'shorts']: vtype = 'videos'
+    q = request.query.get('q') # Global search inside channel
+
+    if not channel_id:
+        user = await get_authenticated_user(request)
+        if not user: return aiohttp.web.json_response({"error": "Unauthorized"}, status=401)
+    
+    if not channel_id: return aiohttp.web.json_response({"error": "Missing channel_id"}, status=400)
+    
+    # 1. Fetch metadata from page HTML for time_ago and better view counts
+    meta_map = {}
+    try:
+        import urllib.parse
+        if q:
+            url = f"https://www.youtube.com/channel/{channel_id}/search?query={urllib.parse.quote(q)}"
+        else:
+            url = f"https://www.youtube.com/channel/{channel_id}/{vtype}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept-Encoding": "identity",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=10) as resp:
+                html = await resp.text()
+        
+        match = re.search(r'var ytInitialData = ({.*?});', html)
+        if match:
+            data = json.loads(match.group(1))
+            def find_meta(obj):
+                if isinstance(obj, dict):
+                    if 'videoRenderer' in obj:
+                        v = obj['videoRenderer']
+                        vid = v.get('videoId')
+                        if vid:
+                            meta_map[vid] = {
+                                "time": v.get('publishedTimeText', {}).get('simpleText'),
+                                "views": v.get('viewCountText', {}).get('simpleText', v.get('shortViewCountText', {}).get('simpleText'))
+                            }
+                    elif 'shortVideoRenderer' in obj:
+                        v = obj['shortVideoRenderer']
+                        vid = v.get('videoId')
+                        if vid:
+                            meta_map[vid] = {
+                                "time": "Short",
+                                "views": v.get('viewCountText', {}).get('simpleText')
+                            }
+                    for val in obj.values(): find_meta(val)
+                elif isinstance(obj, list):
+                    for item in obj: find_meta(item)
+            find_meta(data)
+
+            # 1.5 Extract channel logo and update subscriptions.json
+            logo_url = None
+            header = data.get('header', {})
+            if 'c4TabbedHeaderRenderer' in header:
+                logo_url = header['c4TabbedHeaderRenderer'].get('avatar', {}).get('thumbnails', [{}])[-1].get('url')
+            elif 'metadata' in data:
+                logo_url = data['metadata'].get('channelMetadataRenderer', {}).get('avatar', {}).get('thumbnails', [{}])[-1].get('url')
+            
+            if logo_url:
+                subs = load_subscriptions()
+                if channel_id in subs and subs[channel_id].get('logo') != logo_url:
+                    subs[channel_id]['logo'] = logo_url
+                    save_subscriptions(subs)
+    except Exception as e:
+        print(f"Metadata extraction error: {e}")
+
+    # 2. Use yt-dlp to get the standard entries for the requested page
+    opts = get_base_ydl_opts(custom_opts={
+        'extract_flat': True,
+        'quiet': True,
+        'no_warnings': True,
+        'playlist_items': f'{start_idx}-{end_idx}', # Pagination range
+        'noplaylist': False,
+        'cookiefile': None
+    })
+    
+    try:
+        import urllib.parse
+        if q:
+            # Use standard search but try to scope to channel if possible, or just the search tab
+            url = f"https://www.youtube.com/channel/{channel_id}/search?query={urllib.parse.quote(q)}"
+        else:
+            url = f"https://www.youtube.com/channel/{channel_id}/{vtype}"
+
+        # Get channel name for fallback if needed
+        subs = load_subscriptions()
+        channel_name = subs.get(channel_id, {}).get('name', '')
+
+        info = await asyncio.to_thread(lambda: yt_dlp.YoutubeDL(opts).extract_info(url, download=False))
+        entries = info.get('entries', [])
+        
+        # Fallback if channel-specific search failed but we have a query
+        if q and not entries and channel_name:
+            fallback_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(f'{channel_name} {q}')}"
+            print(f"Deep search fallback to: {fallback_url}")
+            try:
+                info = await asyncio.to_thread(lambda: yt_dlp.YoutubeDL(opts).extract_info(fallback_url, download=False))
+                entries = info.get('entries', [])
+            except: pass
+
+        videos = []
+        # Update logo from yt-dlp if still missing or generic
+        logo_url = info.get('thumbnail')
+        if logo_url:
+            if channel_id in subs and (not subs[channel_id].get('logo') or 'google.com/s2/favicons' in subs[channel_id].get('logo')):
+                subs[channel_id]['logo'] = logo_url
+                save_subscriptions(subs)
+
+        for e in entries:
+            if not e: continue
+            vid = e.get('id')
+            if not vid: continue
+            
+            # Better thumbnail selection
+            thumb = e.get('thumbnail')
+            if e.get('thumbnails'):
+                thumb = e.get('thumbnails')[-1].get('url')
+
+            meta = meta_map.get(vid, {})
+            videos.append({
+                "id": vid,
+                "title": e.get('title'),
+                "thumbnail": thumb,
+                "url": f"https://www.youtube.com/watch?v={vid}",
+                "duration": e.get('duration'),
+                "view_count": meta.get('views') or e.get('view_count'),
+                "time_ago": meta.get('time') or "Uploaded Recently",
+                "is_shorts": e.get('duration') and e.get('duration') < 60 or vtype == 'shorts' or '/shorts/' in (e.get('url') or '')
+            })
+
+        # If NOT searching, we might want to blend or ensure shorts are fetched if requested
+        if not q and vtype == 'shorts' and not videos:
+            # Fallback specifically for shorts if entry extraction failed above
+            shorts_url = f"https://www.youtube.com/channel/{channel_id}/shorts"
+            try:
+                shorts_info = await asyncio.to_thread(lambda: yt_dlp.YoutubeDL(opts).extract_info(shorts_url, download=False))
+                s_entries = shorts_info.get('entries', [])
+                for e in s_entries:
+                    if not e: continue
+                    vid = e.get('id')
+                    thumb = e.get('thumbnail')
+                    if e.get('thumbnails'): thumb = e.get('thumbnails')[-1].get('url')
+                    videos.append({
+                        "id": vid,
+                        "title": e.get('title'),
+                        "thumbnail": thumb,
+                        "url": f"https://www.youtube.com/shorts/{vid}",
+                        "is_shorts": True
+                    })
+            except: pass
+
+        return aiohttp.web.json_response(videos)
+    except Exception as e:
+        return aiohttp.web.json_response({"error": str(e)}, status=500)
+
+async def web_youtube_stream(request):
+    """Get direct video stream URL to play in browser"""
+    user = await get_authenticated_user(request)
+    if not user: return aiohttp.web.json_response({"error": "Unauthorized"}, status=401)
+    
+    video_id = request.query.get('id')
+    if not video_id: return aiohttp.web.json_response({"error": "Missing id"}, status=400)
+    
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    cookies_file = os.getenv("COOKIES_FILE", "/home/azureuser/aharbot/bot/cookies.txt")
+    
+    # Restrict to 360P only as requested. Use '18' (360p mp4) or fallback to 360p height.
+    opts = get_base_ydl_opts(custom_opts={
+        'format': '18/bestvideo[height<=360]+bestaudio/best[height<=360]',
+        'quiet': True,
+        'no_warnings': True,
+        'cookiefile': cookies_file if os.path.exists(cookies_file) else None,
+        'nocheckcertificate': True,
+    })
+    
+    try:
+        ydl = yt_dlp.YoutubeDL(opts)
+        info = await asyncio.to_thread(lambda: ydl.extract_info(url, download=False))
+        stream_url = info.get('url')
+        
+        if not stream_url:
+            return aiohttp.web.json_response({"error": "Could not extract stream URL"}, status=404)
+        
+        return aiohttp.web.json_response({"url": stream_url})
+    except Exception as e:
+        print(f"Extraction error: {e}")
+        return aiohttp.web.json_response({"error": str(e)}, status=500)
+
 async def web_index(request):
     """Serve the ultra cool glassmorphism UI"""
     try:
@@ -4565,6 +4909,12 @@ async def main():
     print("Starting Aiohttp Web Server on port 8080...")
     web_app = aiohttp.web.Application(client_max_size=1024**3) # 1GB max
     web_app.router.add_get('/', web_index)
+    web_app.router.add_get('/youtube', web_youtube_index)
+    web_app.router.add_post('/api/youtube/login', web_youtube_login)
+    web_app.router.add_post('/api/youtube/verify', web_youtube_verify)
+    web_app.router.add_get('/api/youtube/subs', web_youtube_get_subs)
+    web_app.router.add_get('/api/youtube/videos', web_youtube_get_videos)
+    web_app.router.add_get('/api/youtube/stream', web_youtube_stream)
     web_app.router.add_get('/dl/{hash}', web_download)
     web_app.router.add_post('/api/info', web_api_info)
     web_app.router.add_get('/api/feedbacks', web_get_feedbacks)

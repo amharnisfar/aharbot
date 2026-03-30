@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AharTube - Your Bot Subscriptions</title>
+    <link rel="icon" type="image/jpeg" href="/static/logo.jpg">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --sidebar: #050505;
+            --accent: #ff0000;
+            --text: #ffffff;
+            --gray: #aaaaaa;
+            --glass: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+        }
+
+        /* --- Sidebar --- */
+        .sidebar {
+            width: 240px;
+            height: 100vh;
+            background: var(--sidebar);
+            position: fixed;
+            left: 0;
+            top: 0;
+            padding: 20px;
+            border-right: 1px solid var(--glass-border);
+            z-index: 1000;
+            transition: 0.3s ease;
+        }
+
+        /* Mobile Adjustments */
+        #mobile-menu-btn {
+            display: none;
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            z-index: 1100;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255,0,0,0.3);
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 999;
+            backdrop-filter: blur(5px);
+        }
+
+        @media (max-width: 900px) {
+            .sidebar { transform: translateX(-100%); width: 280px; }
+            .sidebar.active { transform: translateX(0); }
+            .sidebar-overlay.active { display: block; }
+            .main { margin-left: 0 !important; padding: 15px !important; padding-top: 70px !important; }
+            #mobile-menu-btn { display: block; }
+            .header { flex-direction: column; align-items: stretch; gap: 15px; }
+            .search-bar { width: 100% !important; }
+            .content-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important; gap: 15px !important; }
+            .home-selection-title { font-size: 1.2rem; }
+            .channel-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important; }
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        .nav-item {
+            padding: 12px 15px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-bottom: 5px;
+            color: var(--gray);
+            font-size: 0.95rem;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: var(--glass);
+            color: var(--white);
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--gray);
+            margin: 20px 0 10px 15px;
+            letter-spacing: 1px;
+        }
+
+        /* --- Main Content --- */
+        .main {
+            margin-left: 240px;
+            padding: 24px;
+            min-height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .search-bar {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            padding: 10px 20px;
+            border-radius: 20px 0 0 20px; /* Rounded left only */
+            flex: 1;
+            color: white;
+            outline: none;
+            min-width: 0;
+            border-right: none;
+        }
+
+        .search-btn-combined {
+            background: var(--accent);
+            color: white;
+            border: none;
+            width: 60px; /* Fixed width */
+            flex: none;  /* Do not grow or shrink */
+            border-radius: 0 20px 20px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.3s;
+        }
+
+        .search-btn-combined:hover {
+            background: #cc0000;
+        }
+
+        /* --- Video Grid (Cleaned Up) --- */
+
+        .video-card {
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .video-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .thumbnail {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #222;
+            border-radius: 12px;
+            object-fit: cover;
+            margin-bottom: 12px;
+        }
+
+        .video-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .video-title {
+            font-size: 1rem;
+            font-weight: 500;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .video-meta {
+            font-size: 0.8rem;
+            color: #aaa;
+            display: flex;
+            gap: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid var(--accent);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        /* --- Shorts Section --- */
+        .shorts-section {
+            margin-top: 50px;
+        }
+
+        .shorts-container-scroll {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-height: 80vh;
+            overflow-y: auto;
+            scroll-snap-type: y mandatory;
+            padding: 20px;
+            background: #000;
+            border-radius: 20px;
+        }
+
+        .short-card-full {
+            min-height: 70vh;
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+            background: #111;
+            border-radius: 15px;
+            scroll-snap-align: start;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .short-card-full iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .shorts-grid {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding-bottom: 20px;
+        }
+
+        .short-card {
+            min-width: 160px;
+            aspect-ratio: 9/16;
+            background: #222;
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            overflow: hidden;
+            transition: 0.3s;
+        }
+
+        .short-card:hover { transform: scale(1.05); }
+
+        .short-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .short-title {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            right: 15px;
+            font-size: 0.9rem;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        /* --- Modal (Auth & Player) --- */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            visibility: hidden;
+            opacity: 0;
+            transition: 0.3s;
+        }
+
+        .modal.active {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: #1e1e1e;
+            padding: 40px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            border: 1px solid var(--glass-border);
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            color: white;
+            margin-top: 8px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        button:hover { background: #cc0000; }
+
+        .player-modal {
+            max-width: 1000px !important;
+            padding: 0 !important;
+            overflow: hidden;
+        }
+
+        iframe {
+            width: 100%;
+            aspect-ratio: 16/9;
+            border: none;
+        }
+
+        /* --- Responsive --- */
+        @media (max-width: 768px) {
+            .sidebar { transform: translateX(-100%); }
+            .main { margin-left: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <button id="mobile-menu-btn" onclick="toggleSidebar()">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+    <div class="sidebar" id="sidebar">
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            AharTube
+        </div>
+        <div class="nav-item active" onclick="location.reload()">🏠 Home</div>
+        <div class="section-title">Subscriptions</div>
+        <div id="subs-list">
+            <div class="nav-item">Loading...</div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="header">
+            <div style="position: relative; display: flex; align-items: center; flex: 3; max-width: 900px; margin-right: 15px;" class="search-container">
+                <input type="text" id="main-search" class="search-bar" placeholder="Type here to search..." onkeyup="handleSearch(event)" style="flex: 1 !important; width: auto !important; padding: 12px 20px;">
+                <button id="search-deep-btn" class="search-btn-combined" onclick="triggerDeepSearch()" title="Deep Search">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                </button>
+            </div>
+            <div id="quality-notice" style="font-size: 0.75rem; color: var(--accent); background: rgba(255,0,0,0.1); padding: 5px 12px; border-radius: 20px; border: 1px solid rgba(255,0,0,0.2); font-weight: 500;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: middle; margin-right: 4px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                360P Only (Other qualities coming soon)
+            </div>
+            <div id="user-info" style="font-size: 0.9rem; color: var(--gray)"></div>
+        </div>
+
+        <h2 id="current-channel-name" style="margin-bottom: 20px;">Subscribed Feed</h2>
+        <div id="video-feed">
+            <!-- Videos inject here -->
+        </div>
+
+        <div class="shorts-section" id="shorts-container" style="display: none;">
+            <h2 style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="red"><path d="M17.77 10.32l-1.2-.5L18 8.82a3.74 3.74 0 0 0-3.5-5.66 3.7 3.7 0 0 0-1.63.39L6 6.49a3.73 3.73 0 0 0-1.47 5.11l1.2.5L4 13.18a3.74 3.74 0 0 0 3.5 5.66 3.7 3.7 0 0 0 1.63-.39l6.87-2.94a3.73 3.73 0 0 0 1.47-5.11zM10 14.65v-5.3L15 12l-5 2.65z"/></svg>
+                Shorts
+            </h2>
+            <div class="shorts-grid" id="shorts-feed">
+                <!-- Shorts inject here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <h2 style="margin-bottom: 10px;">Login to AharBot</h2>
+            <p style="color: var(--gray); font-size: 0.9rem; margin-bottom: 25px;">Enter your Telegram username to receive an OTP.</p>
+            
+            <div id="username-step">
+                <div class="input-group">
+                    <input type="text" id="username-input" placeholder="@your_username">
+                </div>
+                <button onclick="requestOTP()">Send OTP</button>
+            </div>
+
+            <div id="otp-step" style="display: none;">
+                <div class="input-group">
+                    <input type="text" id="otp-input" placeholder="6-digit code">
+                </div>
+                <button onclick="verifyOTP()">Verify & Login</button>
+                <p style="margin-top: 15px; font-size: 0.8rem; cursor: pointer; color: var(--gray);" onclick="resetLogin()">Back</p>
+            </div>
+            
+            <p id="auth-error" style="color: var(--accent); font-size: 0.8rem; margin-top: 15px;"></p>
+        </div>
+    </div>
+
+    <!-- Player Modal (Standard Video) -->
+    <div id="player-modal" class="modal" onclick="closePlayer()">
+        <div class="modal-content player-modal" onclick="event.stopPropagation()">
+            <div id="video-container">
+                <video id="player" playsinline controls></video>
+            </div>
+            <div style="padding: 20px; text-align: left;">
+                <h3 id="playing-title">Video Title</h3>
+                <p id="playing-desc" style="color: var(--gray); font-size: 0.9rem; margin-top: 10px;">Loading details...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shorts Player Modal (Perfect Mobile Experience) -->
+    <div id="shorts-modal" class="modal">
+        <div id="shorts-scroller" class="shorts-scroller">
+            <!-- Short slides injected here -->
+        </div>
+        <div class="shorts-global-controls">
+            <div class="shorts-btn" onclick="closeShortsPlayer()">✕</div>
+        </div>
+    </div>
+
+    <!-- Include Plyr -->
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+
+    <style>
+        .channel-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; padding: 20px;
+        }
+        .channel-card {
+            background: var(--card-bg); border-radius: 15px; padding: 20px; text-align: center; cursor: pointer; transform: translateZ(0); transition: transform 0.2s, background 0.2s; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .channel-card:hover { transform: translateY(-5px); background: rgba(255,255,255,0.1); }
+        .channel-logo { width: 80px; height: 80px; border-radius: 50%; margin-bottom: 15px; background: #333; object-fit: cover; }
+        .home-selection-title { padding: 20px 20px 0 20px; font-size: 1.5rem; color: var(--accent); }
+
+        /* Tabs Style */
+        .channel-tabs {
+            display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); padding: 0 20px; background: var(--bg); position: sticky; top: 0; z-index: 10;
+        }
+        .tab {
+            padding: 15px 25px; cursor: pointer; color: var(--gray); font-weight: 500; border-bottom: 2px solid transparent; transition: 0.2s;
+        }
+        .tab.active { color: white; border-bottom-color: var(--accent); }
+
+        /* Unified Grid System */
+        .content-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 25px;
+            padding: 20px 0;
+            width: 100%;
+        }
+
+        .content-grid.shorts-mode {
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 15px;
+        }
+
+        .video-card {
+            width: 100%;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .video-card:hover { transform: translateY(-5px); }
+        .thumbnail img {
+            width: 100%;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            border-radius: 12px;
+            background: #222;
+        }
+        .shorts-mode .thumbnail img {
+            aspect-ratio: 9/16;
+        }
+
+        /* Pagination Bar */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            padding: 30px;
+            margin-top: 20px;
+        }
+        .page-btn {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 10px 25px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: 0.3s;
+            font-weight: 500;
+        }
+        .page-btn:hover:not(:disabled) {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        .page-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        #page-number {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 1.1rem;
+        }
+
+        /* Perfect Shorts Experience */
+        .shorts-scroller {
+            width: 100%;
+            height: 100dvh; /* Dynamic viewport height */
+            overflow-y: scroll;
+            scroll-snap-type: y mandatory;
+            scroll-behavior: smooth;
+            background: #000;
+        }
+        .short-slide {
+            width: 100%;
+            height: 100dvh;
+            scroll-snap-align: start;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        .short-video-wrapper {
+            width: 100%;
+            height: 100%;
+            max-width: 500px; /* Limit width on desktop */
+            position: relative;
+        }
+        .short-video-wrapper video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .shorts-info-overlay {
+            position: absolute;
+            bottom: 40px;
+            left: 20px;
+            right: 80px;
+            color: white;
+            z-index: 10;
+            pointer-events: none;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+        }
+        .shorts-global-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+        }
+        .shorts-btn {
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            cursor: pointer;
+            font-size: 1.2rem;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+    </style>
+
+    <script>
+        let currentUsername = "";
+        let player = null;
+        let shortsPlayer = null;
+        let allSubscriptions = [];
+        let currentChannelData = { id: "", name: "", videos: [], shorts: [] };
+        let currentShortIndex = -1;
+        let isScrollingShorts = false;
+        let currentPage = 1;
+        let currentTab = 'videos';
+
+        async function init() {
+            player = new Plyr('#player', { autoplay: true, ratio: '16:9' });
+            shortsPlayer = new Plyr('#shorts-player', { autoplay: true, ratio: '9:16' });
+
+            const subs = await fetchAPI('/api/youtube/subs');
+            if (subs.error) {
+                document.getElementById('login-modal').classList.add('active');
+                return;
+            }
+            allSubscriptions = subs;
+            renderSubs(subs);
+            showHome();
+        }
+
+        async function fetchAPI(url, options = {}) {
+            try { const res = await fetch(url, options); return await res.json(); }
+            catch (e) { return { error: e.message }; }
+        }
+
+        function renderSubs(subs) {
+            const container = document.getElementById('subs-list');
+            container.innerHTML = `<div class="nav-item active" id="nav-home" onclick="location.reload()">🏠 Home</div><div style="margin-top:20px; padding-left:15px; font-size:12px; color:#666; text-transform:uppercase; letter-spacing:1px;">Subscriptions</div>` + 
+                subs.map(s => `<div class="nav-item" id="nav-${s.id}" onclick="loadChannel('${s.id}', '${s.name}', 1)">📺 ${s.name}</div>`).join('');
+        }
+
+        function showHome() {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const homeNav = document.getElementById('nav-home');
+            if (homeNav) homeNav.classList.add('active');
+            
+            document.getElementById('current-channel-name').innerText = "Home Selection";
+            document.getElementById('shorts-container').style.display = 'none';
+            currentChannelData = { id: '', name: '', videos: [], shorts: [] };
+
+            const query = document.getElementById('main-search').value.toLowerCase();
+            const filtered = allSubscriptions.filter(s => s.name.toLowerCase().includes(query));
+            const videoFeed = document.getElementById('video-feed');
+            videoFeed.innerHTML = `<div class="home-selection-title">Your Subscribed Channels</div><div class="channel-grid">` + 
+                filtered.map(s => `<div class="channel-card" onclick="loadChannel('${s.id}', '${s.name}', 1)"><img class="channel-logo" src="${s.logo}" onerror="this.src='https://www.google.com/s2/favicons?domain=youtube.com&sz=128'"><div style="font-weight:bold; color:white;">${s.name}</div></div>`).join('') + `</div>`;
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+            document.getElementById('sidebar-overlay').classList.toggle('active');
+        }
+
+        async function handleSearch(event) {
+            const query = document.getElementById('main-search').value.toLowerCase();
+            
+            if (!currentChannelData.id) {
+                showHome();
+                return;
+            }
+
+            // For channels, we don't do local filtering anymore as it confuses "Deep Search"
+            // We only trigger deep search on Enter
+            if (event.key === 'Enter') {
+                await triggerDeepSearch();
+            }
+        }
+
+        async function triggerDeepSearch() {
+            const query = document.getElementById('main-search').value;
+            if (currentChannelData.id && query) {
+                await loadChannel(currentChannelData.id, currentChannelData.name, 1, currentTab, query);
+            } else if (!currentChannelData.id) {
+                showHome();
+            }
+        }
+
+        async function loadChannel(id, name, page = 1, tab = 'videos', q = '') {
+            if (window.innerWidth <= 900 && document.getElementById('sidebar').classList.contains('active')) toggleSidebar();
+            currentPage = page;
+            currentTab = tab;
+            
+            const videoFeed = document.getElementById('video-feed');
+            videoFeed.innerHTML = `<div style="padding: 50px; text-align: center; color: var(--gray); font-size: 1.1rem;">
+                <div class="spinner" style="border: 3px solid rgba(255,255,255,0.1); border-top: 3px solid var(--accent); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 15px;"></div>
+                ${q ? `Searching for "${q}"...` : 'Loading channel content...'}
+            </div>`;
+            
+            document.getElementById('current-channel-name').innerText = name;
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const activeNav = document.getElementById(`nav-${id}`);
+            if (activeNav) activeNav.classList.add('active');
+
+            try {
+                const url = `/api/youtube/videos?channel_id=${id}&type=${tab}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
+                const videos = await fetchAPI(url);
+                if (videos.error) { videoFeed.innerHTML = `<div style="color:red; padding:20px;">Error: ${videos.error}</div>`; return; }
+                
+                currentChannelData = { id, name, videos: videos.filter(v => !v.is_shorts), shorts: videos.filter(v => v.is_shorts) };
+                
+                if (tab === 'videos') currentChannelData.videos = videos;
+                else currentChannelData.shorts = videos;
+
+                renderChannelView(tab);
+                
+                if (q) {
+                    const clearBtn = document.createElement('div');
+                    clearBtn.style = "padding: 10px 20px; color: var(--accent); cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 0.9rem;";
+                    clearBtn.innerHTML = `<span>Showing results for "${q}"</span> <span style="background: rgba(255,0,0,0.1); padding: 2px 8px; border-radius: 5px;">✕ Clear Search</span>`;
+                    clearBtn.onclick = () => {
+                        document.getElementById('main-search').value = '';
+                        loadChannel(id, name, 1, tab);
+                    };
+                    videoFeed.prepend(clearBtn);
+                }
+            } catch (err) {
+                videoFeed.innerHTML = `<div style="color:red; padding:20px;">Connection Failed</div>`;
+            }
+        }
+
+        function renderChannelView(viewType) {
+            currentTab = viewType;
+            const videoFeed = document.getElementById('video-feed');
+            videoFeed.innerHTML = `
+                <div class="channel-tabs">
+                    <div class="tab ${viewType === 'videos' ? 'active' : ''}" onclick="switchTab('videos')">Videos</div>
+                    <div class="tab ${viewType === 'shorts' ? 'active' : ''}" onclick="switchTab('shorts')">Shorts</div>
+                </div>
+                <div id="tab-content" class="content-grid ${viewType === 'shorts' ? 'shorts-mode' : ''}">
+                    ${viewType === 'videos' ? renderVideos() : renderShortsGrid()}
+                </div>
+                <div class="pagination">
+                    <button class="page-btn" onclick="changePage(-1)" ${currentPage <= 1 ? 'disabled' : ''}>← Previous</button>
+                    <div id="page-number">Page ${currentPage}</div>
+                    <button class="page-btn" onclick="changePage(1)">Next →</button>
+                </div>
+            `;
+        }
+
+        async function switchTab(tab) {
+            if (currentTab !== tab) {
+                currentTab = tab;
+                await loadChannel(currentChannelData.id, currentChannelData.name, 1, tab);
+            }
+        }
+
+        async function changePage(dir) {
+            const nextIdx = currentPage + dir;
+            if (nextIdx >= 1) {
+                await loadChannel(currentChannelData.id, currentChannelData.name, nextIdx, currentTab);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        function handleSearch() {
+            if (!currentChannelData.id) {
+                showHome();
+                return;
+            }
+            renderChannelView(currentTab);
+        }
+
+        function renderVideos(items) {
+            const list = items || currentChannelData.videos;
+            // Removed local filtering to avoid confusion with Deep Search
+            const filtered = list;
+            
+            return filtered.map(v => `
+                <div class="video-card" onclick="playVideo('${v.id}', \`${v.title.replace(/"/g, '&quot;')}\`)">
+                    <div class="thumbnail"><img src="${v.thumbnail}" onerror="this.src='https://via.placeholder.com/480x270?text=Blocked'"></div>
+                    <div class="video-info">
+                        <div class="video-title">${v.title}</div>
+                        <div class="video-meta">
+                            <span>${v.view_count ? formatViews(v.view_count) : ''}</span>
+                            <span>${v.time_ago || ''}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderShortsGrid(items) {
+            const list = items || currentChannelData.shorts;
+            // Removed local filtering to avoid confusion with Deep Search
+            const filtered = list;
+
+            return filtered.map((s, index) => `
+                <div class="video-card" style="aspect-ratio: 9/16;" onclick="openShortsPlayer(${index})">
+                    <div class="thumbnail" style="height: 100%;"><img src="${s.thumbnail}" style="object-fit: cover; height: 100%;"></div>
+                    <div class="video-info" style="position: absolute; bottom: 0; background: linear-gradient(transparent, rgba(0,0,0,0.8)); width: 100%; padding: 10px;">
+                        <div class="video-title" style="font-size: 0.85rem; color: #fff;">${s.title}</div>
+                        <div class="video-meta" style="color: #ccc; font-size: 0.75rem;">
+                            <span>${s.view_count ? formatViews(s.view_count) : ''}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function formatViews(views) {
+            if (typeof views === 'string' && (views.includes('views') || views.includes('watching'))) return views;
+            const n = parseInt(views);
+            if (isNaN(n)) return views;
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M views';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K views';
+            return n + ' views';
+        }
+
+        let shortsObserver = null;
+        async function openShortsPlayer(index) {
+            const scroller = document.getElementById('shorts-scroller');
+            scroller.innerHTML = currentChannelData.shorts.map((s, i) => `
+                <div class="short-slide" id="short-slide-${i}" data-index="${i}" data-id="${s.id}">
+                    <div class="short-video-wrapper">
+                        <img src="${s.thumbnail}" class="short-placeholder" id="placeholder-${i}" style="width:100%; height:100%; object-fit:cover; filter:blur(10px); opacity:0.5;">
+                        <div class="shorts-info-overlay">
+                            <h3 style="margin-bottom:5px;">${s.title}</h3>
+                            <p style="opacity:0.8; font-size:0.9rem;">${currentChannelData.name}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('shorts-modal').classList.add('active');
+            
+            // Scroll to the clicked index
+            const targetSlide = document.getElementById(`short-slide-${index}`);
+            targetSlide.scrollIntoView();
+
+            if (!shortsObserver) {
+                shortsObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const idx = entry.target.dataset.index;
+                            playShortInSlide(idx);
+                        }
+                    });
+                }, { threshold: 0.7 });
+            }
+
+            document.querySelectorAll('.short-slide').forEach(s => shortsObserver.observe(s));
+        }
+
+        async function playShortInSlide(index) {
+            currentShortIndex = parseInt(index);
+            const slide = document.getElementById(`short-slide-${index}`);
+            const wrapper = slide.querySelector('.short-video-wrapper');
+            const short = currentChannelData.shorts[index];
+            
+            // Move the global shorts player to this slide if needed, 
+            // or just ensure this slide has the right content.
+            // For "perfect" feel, we'll keep the video element in a single place or move it.
+            // But Plyr is tricky with moving. Let's just create/reuse.
+            
+            // Clean up other videos
+            document.querySelectorAll('.short-video-wrapper video').forEach(v => {
+                if (v.id !== 'shorts-player') v.remove();
+            });
+
+            const res = await fetchAPI(`/api/youtube/stream?id=${short.id}`);
+            if (res.url) {
+                let v = document.getElementById('shorts-player');
+                if (!v) {
+                    v = document.createElement('video');
+                    v.id = 'shorts-player';
+                    v.playsInline = true;
+                    v.controls = true;
+                    v.loop = true;
+                }
+                v.src = res.url;
+                wrapper.appendChild(v);
+                
+                // Hide placeholder
+                const placeholder = document.getElementById(`placeholder-${index}`);
+                if (placeholder) placeholder.style.display = 'none';
+
+                v.play().catch(() => {});
+            }
+        }
+
+        function closeShortsPlayer() { 
+            const v = document.getElementById('shorts-player');
+            if (v) v.pause();
+            document.getElementById('shorts-modal').classList.remove('active'); 
+        }
+
+        async function playVideo(id, title) {
+            document.getElementById('playing-title').innerText = "Loading stream...";
+            document.getElementById('player-modal').classList.add('active');
+            const res = await fetchAPI(`/api/youtube/stream?id=${id}`);
+            if (res.url) {
+                document.getElementById('player').src = res.url;
+                document.getElementById('playing-title').innerText = title;
+                player.play();
+            }
+        }
+
+        function closePlayer() { document.getElementById('player-modal').classList.remove('active'); player.stop(); }
+        function closeShortsPlayer() { document.getElementById('shorts-modal').classList.remove('active'); shortsPlayer.stop(); }
+
+        async function requestOTP() {
+            const user = document.getElementById('username-input').value;
+            const res = await fetchAPI('/api/youtube/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username: user }) });
+            if (!res.error) { currentUsername = user; document.getElementById('username-step').style.display = 'none'; document.getElementById('otp-step').style.display = 'block'; }
+        }
+
+        async function verifyOTP() {
+            const otp = document.getElementById('otp-input').value;
+            const res = await fetchAPI('/api/youtube/verify', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username: currentUsername, otp: otp }) });
+            if (!res.error) location.reload();
+        }
+
+        init();
+
+        // Keyboard navigation for shorts
+        window.addEventListener('keydown', (e) => {
+            if (!document.getElementById('shorts-modal').classList.contains('active')) return;
+            if (e.key === 'ArrowDown') nextShort(1);
+            if (e.key === 'ArrowUp') nextShort(-1);
+            if (e.key === 'Escape') closeShortsPlayer();
+        });
+    </script>
+</body>
+</html>
